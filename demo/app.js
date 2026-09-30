@@ -39,6 +39,9 @@ const state = {
   isListening: false,
   isSpeaking: false,
   ttsEnabled: true,
+  continuousMode: true,        // Conversación continua manos libres activa por defecto
+  conversationActive: false,   // True cuando el usuario inicia la sesión de conversación
+  relistenTimeout: null,
   tasks: [
     { id: 1, text: "Explorar la especificación WebMCP de la W3C", completed: true },
     { id: 2, text: "Hablarle al asistente para probar comandos de voz", completed: false }
@@ -55,6 +58,12 @@ const state = {
     values: [45, 68, 52, 91, 74, 110]
   },
   availableVoices: []
+};
+
+const aiConfig = {
+  provider: localStorage.getItem("webmcp_ai_provider") || "autonomous",
+  apiKey: localStorage.getItem("webmcp_ai_key") || "",
+  endpoint: localStorage.getItem("webmcp_ai_endpoint") || "http://localhost:11434"
 };
 
 // ============================================================================
@@ -242,6 +251,181 @@ async function initWebMCPTools() {
 }
 
 // ============================================================================
+// 4. Universal AI Intelligence & Knowledge Engine
+// ============================================================================
+const SPECIALIZED_KNOWLEDGE = [
+  {
+    keywords: ["que es mcp", "qué es mcp", "que es un mcp", "qué es un mcp", "model context protocol", "significa mcp", "protocolo mcp"],
+    answer: "MCP significa Model Context Protocol. Es un estándar abierto desarrollado por Anthropic para permitir que los modelos de IA se conecten de forma segura y estructurada a fuentes de datos, servidores de archivos y herramientas externas mediante una arquitectura cliente-servidor."
+  },
+  {
+    keywords: ["diferencia entre mcp y webmcp", "mcp vs webmcp", "diferencia mcp webmcp", "diferencia entre webmcp y mcp"],
+    answer: "La diferencia es que MCP tradicional conecta la IA con servidores remotos y APIs en la nube, mientras que WebMCP conecta el agente de IA directamente con la pestaña del navegador y la interfaz visual del usuario mediante JavaScript en el cliente."
+  },
+  {
+    keywords: ["que es webmcp", "qué es webmcp", "para que sirve webmcp", "que es este repositorio"],
+    answer: "WebMCP es una propuesta de estándar de la W3C que permite a los sitios web registrar herramientas de JavaScript directamente en el navegador, para que agentes de IA como Gemini o ChatGPT interactúen de forma precisa sin depender de capturas de pantalla ni clics simulados."
+  },
+  {
+    keywords: ["quien creo mcp", "quién creó mcp", "anthropic mcp"],
+    answer: "El Model Context Protocol (MCP) fue desarrollado y publicado como código abierto por la empresa Anthropic a finales de 2024."
+  },
+  {
+    keywords: ["que es un agente", "qué es un agente", "agente de ia", "agent"],
+    answer: "Un agente de IA es un sistema que combina un modelo de lenguaje con herramientas, memoria y capacidad de razonamiento para percibir su entorno y ejecutar acciones autónomas para cumplir los objetivos del usuario."
+  },
+  {
+    keywords: ["que es un llm", "qué es un llm", "large language model", "modelo de lenguaje"],
+    answer: "Un LLM o modelo de lenguaje grande es una red neuronal avanzada entrenada con miles de millones de textos, capaz de entender, razonar y responder en lenguaje natural."
+  },
+  {
+    keywords: ["que es w3c", "qué es w3c", "world wide web consortium"],
+    answer: "El W3C es el consorcio internacional que define los estándares oficiales de la web, como HTML, CSS, DOM y nuevas especificaciones de inteligencia artificial como WebMCP."
+  },
+  {
+    keywords: ["chiste", "cuentame un chiste", "dime un chiste"],
+    answer: "Había una vez un programador que fue a la playa... y al ver una ola gigante, ¡intentó hacerle un 'catch' para que no se rompiera el servidor!"
+  }
+];
+
+async function askUniversalIntelligence(query) {
+  const norm = query.toLowerCase().replace(/[¿?¡!]/g, "").trim();
+
+  // 1. External LLM Provider (if configured by user)
+  if (aiConfig.provider === "gemini" && aiConfig.apiKey) {
+    try {
+      const llmAns = await queryGeminiAPI(aiConfig.apiKey, query);
+      if (llmAns) return { text: llmAns, source: "Gemini AI" };
+    } catch (err) {
+      console.warn("Gemini query error:", err);
+    }
+  } else if (aiConfig.provider === "ollama") {
+    try {
+      const ollamaAns = await queryOllamaAPI(aiConfig.endpoint, query);
+      if (ollamaAns) return { text: ollamaAns, source: "Ollama Local" };
+    } catch (err) {
+      console.warn("Ollama query error:", err);
+    }
+  } else if (aiConfig.provider === "openai" && aiConfig.apiKey) {
+    try {
+      const openAiAns = await queryOpenAIAPI(aiConfig.apiKey, aiConfig.endpoint, query);
+      if (openAiAns) return { text: openAiAns, source: "OpenAI" };
+    } catch (err) {
+      console.warn("OpenAI query error:", err);
+    }
+  }
+
+  // 2. Specialized Knowledge Map
+  for (const item of SPECIALIZED_KNOWLEDGE) {
+    if (item.keywords.some(kw => norm.includes(kw))) {
+      return { text: item.answer, source: "Base WebMCP" };
+    }
+  }
+
+  // 3. Live Encyclopedic Search (Wikipedia API)
+  const wikiAnswer = await fetchLiveWikipediaKnowledge(query);
+  if (wikiAnswer) {
+    return { text: wikiAnswer, source: "Wikipedia en Vivo" };
+  }
+
+  // 4. Conversational Fallback
+  return {
+    text: `Entendí tu pregunta: "${query}". Aunque no tengo un dato exacto en mi enciclopedia inmediata, puedes preguntarme sobre temas de IA, tecnología, ciencia, o pedirme que interactúe con los controles de la página.`,
+    source: "Asistente"
+  };
+}
+
+async function fetchLiveWikipediaKnowledge(query) {
+  try {
+    let cleanQ = query
+      .replace(/^(qué es|que es|quién fue|quien fue|quién es|quien es|cuéntame sobre|cuentame sobre|explícame|explicame|dime sobre|defina|definición de|un|una|el|la)\s+/i, '')
+      .replace(/[?¿!¡]/g, '')
+      .trim();
+
+    if (cleanQ.toLowerCase() === 'mcp' || cleanQ.toLowerCase().includes('mcp')) {
+      cleanQ = 'Model Context Protocol';
+    } else if (cleanQ.toLowerCase() === 'w3c') {
+      cleanQ = 'World Wide Web Consortium';
+    }
+
+    const sRes = await fetch(`https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQ)}&format=json&origin=*`);
+    const sData = await sRes.json();
+
+    if (sData.query && sData.query.search && sData.query.search.length > 0) {
+      const title = sData.query.search[0].title;
+      const pRes = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+      const pData = await pRes.json();
+
+      if (pData.extract) {
+        let cleanExtract = pData.extract.replace(/\s*\([^)]*\)/g, "");
+        const sentences = cleanExtract.split(/(?<=[.!?])\s+/);
+        return sentences.slice(0, 2).join(' ');
+      }
+    }
+  } catch (err) {
+    console.warn("Error fetching Wikipedia knowledge:", err);
+  }
+  return null;
+}
+
+async function queryGeminiAPI(apiKey, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      systemInstruction: {
+        parts: [{ text: "Eres un asistente de voz inteligente conectado a la web con WebMCP. Responde en español de forma directa, conversacional y en máximo 2 oraciones para ser leídas por voz." }]
+      }
+    })
+  });
+  const data = await response.json();
+  if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
+    return data.candidates[0].content.parts[0].text.trim();
+  }
+  return null;
+}
+
+async function queryOllamaAPI(endpoint, prompt) {
+  const cleanEndpoint = (endpoint || "http://localhost:11434").replace(/\/$/, "");
+  const response = await fetch(`${cleanEndpoint}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama3",
+      prompt: `Responde en español de forma concisa en máximo 2 oraciones para ser leídas por voz: ${prompt}`,
+      stream: false
+    })
+  });
+  const data = await response.json();
+  return data.response ? data.response.trim() : null;
+}
+
+async function queryOpenAIAPI(apiKey, endpoint, prompt) {
+  const cleanEndpoint = (endpoint || "https://api.openai.com/v1").replace(/\/$/, "");
+  const response = await fetch(`${cleanEndpoint}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4o-mini",
+      messages: [
+        { role: "system", content: "Responde en español de forma directa y concisa en máximo 2 oraciones para voz." },
+        { role: "user", content: prompt }
+      ]
+    })
+  });
+  const data = await response.json();
+  if (data.choices && data.choices[0].message) {
+    return data.choices[0].message.content.trim();
+  }
+  return null;
+}
+
+// ============================================================================
 // 4. Voice Agent Engine: Natural Language Understanding (NLU) & Dispatcher
 // ============================================================================
 async function processUserInstruction(rawText) {
@@ -322,11 +506,19 @@ async function processUserInstruction(rawText) {
     toolToCall = "consultar_herramientas";
     toolArgs = {};
   }
-  // 6. Conversational / WebMCP Explanations
-  else if (lower.includes("hola") || lower.includes("buenos días") || lower.includes("buenas tardes")) {
-    directSpeechResponse = "¡Hola! Estoy conectado a esta página mediante WebMCP. Puedes pedirme cambiar el diseño, crear tareas, activar un temporizador o generar gráficos.";
-  } else if (lower.includes("qué es webmcp") || lower.includes("que es webmcp")) {
-    directSpeechResponse = "WebMCP es un estándar propuesto por la W3C que permite a los sitios web exponer herramientas directamente a agentes de IA integrados en el navegador, evitando depender de scraping o clics simulados.";
+  // 6. Conversational Flow Controls & Greetings
+  else if (lower.includes("pausa") || lower.includes("detén la conversación") || lower.includes("deten la conversacion") || lower.includes("para de escuchar") || lower.includes("silencio")) {
+    pauseConversation();
+    directSpeechResponse = "Conversación continua pausada. Presiona el botón o la barra espaciadora cuando desees volver a hablar.";
+  } else if (lower.includes("continúa") || lower.includes("continua") || lower.includes("reanuda") || lower.includes("sigue")) {
+    startConversation();
+    directSpeechResponse = "Conversación continua reanudada. Puedes seguir hablándome.";
+  } else if (lower.includes("hola") || lower.includes("buenos días") || lower.includes("buenas tardes")) {
+    directSpeechResponse = "¡Hola! Te escucho perfectamente y estamos en modo conversación continua. Dime qué deseas saber o qué herramienta quieres probar.";
+  } else if (lower.includes("cómo estás") || lower.includes("como estas")) {
+    directSpeechResponse = "¡Muy bien! Listo para responder cualquier pregunta o interactuar con la página web mediante WebMCP. ¿Qué quieres saber?";
+  } else if (lower.includes("gracias") || lower.includes("muchas gracias")) {
+    directSpeechResponse = "¡Con mucho gusto! Sigo escuchándote por si tienes otra consulta.";
   }
 
   // Execute tool if detected
@@ -354,10 +546,20 @@ async function processUserInstruction(rawText) {
       }
     }
   } else {
-    // Conversational or fallback response
-    const fallback = directSpeechResponse || `Entendí tu instrucción: "${text}". Puedes pedirme cambiar el tema a Neón, agregar tareas, iniciar un temporizador o generar un gráfico.`;
-    appendChatMessage(fallback, "agent");
-    speakResponse(fallback);
+    // Open conversational or knowledge query
+    let answer = directSpeechResponse;
+    let sourceLabel = null;
+
+    if (!answer) {
+      setAgentState("Consultando cerebro de IA...", true);
+      addTrace("AI_QUERY", `Consultando conocimiento para: "${text}"`, "voice");
+      const res = await askUniversalIntelligence(text);
+      answer = res.text;
+      sourceLabel = res.source;
+    }
+
+    appendChatMessage(answer, "agent", null, sourceLabel);
+    speakResponse(answer);
   }
 
   setAgentState("Listo para escucharte", false);
@@ -379,10 +581,41 @@ function initSpeechSynthesis() {
   }
 }
 
+function playTurnChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    // Soft two-tone chime (D5 -> A5)
+    osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+    gain.gain.setValueAtTime(0.06, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.28);
+  } catch (e) {}
+}
+
 function speakResponse(text) {
-  if (!state.ttsEnabled || !('speechSynthesis' in window)) return;
+  if (!state.ttsEnabled || !('speechSynthesis' in window)) {
+    // If TTS is disabled, immediately trigger auto-listen in continuous mode
+    if (state.continuousMode && state.conversationActive) {
+      clearTimeout(state.relistenTimeout);
+      state.relistenTimeout = setTimeout(() => {
+        if (!state.isSpeaking && state.continuousMode && state.conversationActive) {
+          playTurnChime();
+          startListening();
+        }
+      }, 600);
+    }
+    return;
+  }
 
   window.speechSynthesis.cancel(); // Cancel any ongoing speech
+  stopListening(); // Make sure mic is quiet while speaking so it doesn't transcribe itself
 
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.rate = 1.05;
@@ -400,28 +633,48 @@ function speakResponse(text) {
 
   utterance.onstart = () => {
     state.isSpeaking = true;
-    document.querySelector(".agent-panel")?.classList.add("speaking");
+    updateConversationUI();
     setAgentState("Respondiendo con voz...", true);
     addTrace("TTS_SPEAK", "Generando síntesis de voz", "response");
   };
 
   utterance.onend = () => {
     state.isSpeaking = false;
-    document.querySelector(".agent-panel")?.classList.remove("speaking");
+    updateConversationUI();
     setAgentState("Listo para escucharte", false);
+
+    // Turn-taking loop: As soon as assistant finishes talking, automatically listen!
+    if (state.continuousMode && state.conversationActive) {
+      clearTimeout(state.relistenTimeout);
+      state.relistenTimeout = setTimeout(() => {
+        if (!state.isSpeaking && state.continuousMode && state.conversationActive) {
+          playTurnChime();
+          startListening();
+        }
+      }, 350); // 350ms natural breathing space
+    }
   };
 
   utterance.onerror = () => {
     state.isSpeaking = false;
-    document.querySelector(".agent-panel")?.classList.remove("speaking");
+    updateConversationUI();
     setAgentState("Listo para escucharte", false);
+
+    if (state.continuousMode && state.conversationActive) {
+      clearTimeout(state.relistenTimeout);
+      state.relistenTimeout = setTimeout(() => {
+        if (!state.isSpeaking && state.continuousMode && state.conversationActive) {
+          startListening();
+        }
+      }, 400);
+    }
   };
 
   window.speechSynthesis.speak(utterance);
 }
 
 // ============================================================================
-// 6. Speech Recognition (El usuario le habla al navegador)
+// 6. Speech Recognition (El usuario le habla al navegador en bucle fluido)
 // ============================================================================
 let recognition = null;
 let isRecognitionStarting = false;
@@ -440,17 +693,15 @@ function initSpeechRecognition() {
   try {
     recognition = new SpeechRecognition();
     recognition.lang = "es-ES";
-    recognition.continuous = false;
+    recognition.continuous = false; // Turn-taking gives maximum precision & prevents echo
     recognition.interimResults = true;
 
     recognition.onstart = () => {
       isRecognitionStarting = false;
       state.isListening = true;
-      document.querySelector(".agent-panel")?.classList.add("listening");
-      const micLabel = document.getElementById("micButtonLabel");
-      if (micLabel) micLabel.textContent = "Escuchando... Habla ahora";
+      updateConversationUI();
       const transcript = document.getElementById("transcriptLive");
-      if (transcript) transcript.textContent = "Escuchando tu voz en tiempo real...";
+      if (transcript) transcript.textContent = "Te escucho... habla libremente";
       setAgentState("Escuchando...", true);
     };
 
@@ -471,76 +722,84 @@ function initSpeechRecognition() {
         transcriptEl.textContent = finalTranscript || interim || "Escuchando...";
       }
 
-      if (finalTranscript) {
+      if (finalTranscript && finalTranscript.trim()) {
         stopListening();
+        // If continuous mode was on, ensure conversation is marked active
+        if (state.continuousMode) {
+          state.conversationActive = true;
+        }
         processUserInstruction(finalTranscript);
       }
     };
 
     recognition.onerror = (event) => {
-      console.warn("Speech recognition error:", event.error);
+      console.warn("Speech recognition notice:", event.error);
       isRecognitionStarting = false;
-      stopListening();
-      const transcriptEl = document.getElementById("transcriptLive");
-      if (transcriptEl) {
-        if (event.error === 'not-allowed') {
-          transcriptEl.textContent = "Permiso de micrófono denegado. Permite el acceso en el navegador.";
-        } else if (event.error === 'no-speech') {
-          transcriptEl.textContent = "No se detectó audio. Pulsa el botón para intentar de nuevo.";
-        } else {
-          transcriptEl.textContent = `Voz en espera (${event.error}). Puedes volver a pulsar para hablar.`;
+      state.isListening = false;
+      updateConversationUI();
+
+      if (event.error === 'no-speech') {
+        // In continuous conversational mode, brief pauses to think are normal
+        if (state.continuousMode && state.conversationActive && !state.isSpeaking) {
+          const transcriptEl = document.getElementById("transcriptLive");
+          if (transcriptEl) transcriptEl.textContent = "Esperando tu voz... (habla cuando quieras)";
+          clearTimeout(state.relistenTimeout);
+          state.relistenTimeout = setTimeout(() => {
+            if (state.continuousMode && state.conversationActive && !state.isSpeaking && !state.isListening) {
+              startListening();
+            }
+          }, 300);
+          return;
         }
+      } else if (event.error === 'not-allowed') {
+        const transcriptEl = document.getElementById("transcriptLive");
+        if (transcriptEl) transcriptEl.textContent = "Permiso de micrófono denegado. Permite el acceso para hablar.";
+        pauseConversation();
+      } else {
+        const transcriptEl = document.getElementById("transcriptLive");
+        if (transcriptEl) transcriptEl.textContent = `Voz en espera (${event.error}).`;
       }
     };
 
     recognition.onend = () => {
       isRecognitionStarting = false;
-      stopListening();
+      state.isListening = false;
+      updateConversationUI();
+
+      // If continuous mode is active and we are NOT currently speaking or processing, keep listening loop alive!
+      if (state.continuousMode && state.conversationActive && !state.isSpeaking) {
+        clearTimeout(state.relistenTimeout);
+        state.relistenTimeout = setTimeout(() => {
+          if (state.continuousMode && state.conversationActive && !state.isSpeaking && !state.isListening) {
+            startListening();
+          }
+        }, 250);
+      }
     };
   } catch (err) {
     console.error("Error initializing SpeechRecognition:", err);
   }
 }
 
-function toggleListening() {
-  // If already listening or in process of starting, stop cleanly
-  if (state.isListening || isRecognitionStarting) {
-    isRecognitionStarting = false;
-    stopListening();
-    if (recognition) {
-      try {
-        recognition.abort();
-      } catch (err) {}
-    }
-    return;
-  }
+function startListening() {
+  if (state.isListening || isRecognitionStarting || state.isSpeaking) return;
 
   if (!recognition) {
     initSpeechRecognition();
   }
 
-  if (!recognition) {
-    alert("Tu navegador no soporta Web Speech API. Puedes escribir las instrucciones en el campo de texto.");
-    return;
-  }
+  if (!recognition) return;
 
   try {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel(); // Stop talking before listening
-    }
     isRecognitionStarting = true;
-    const micLabel = document.getElementById("micButtonLabel");
-    if (micLabel) micLabel.textContent = "Conectando micrófono...";
     recognition.start();
   } catch (e) {
     isRecognitionStarting = false;
     if (e.name === 'InvalidStateError') {
-      try {
-        recognition.abort();
-      } catch (err) {}
-      stopListening();
-    } else {
-      console.warn("Error starting speech recognition:", e);
+      try { recognition.abort(); } catch (err) {}
+      setTimeout(() => {
+        if (state.conversationActive && !state.isSpeaking) startListening();
+      }, 300);
     }
   }
 }
@@ -548,10 +807,91 @@ function toggleListening() {
 function stopListening() {
   isRecognitionStarting = false;
   state.isListening = false;
-  document.querySelector(".agent-panel")?.classList.remove("listening");
+  if (recognition) {
+    try { recognition.abort(); } catch (err) {}
+  }
+  updateConversationUI();
+}
+
+function startConversation() {
+  state.conversationActive = true;
+  updateConversationUI();
+  playTurnChime();
+  startListening();
+  addTrace("CONVERSATION", "Modo conversación continua activado", "init");
+}
+
+function pauseConversation() {
+  state.conversationActive = false;
+  clearTimeout(state.relistenTimeout);
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.cancel();
+  }
+  stopListening();
+  updateConversationUI();
+  addTrace("CONVERSATION", "Modo conversación pausado", "init");
+}
+
+function toggleConversation() {
+  if (state.conversationActive) {
+    pauseConversation();
+  } else {
+    startConversation();
+  }
+}
+
+function toggleListening() {
+  // Push-to-talk mode toggle
+  if (state.isListening || isRecognitionStarting) {
+    stopListening();
+    return;
+  }
+  startListening();
+}
+
+function updateConversationUI() {
+  const panel = document.querySelector(".agent-panel");
   const micLabel = document.getElementById("micButtonLabel");
-  if (micLabel) micLabel.textContent = "Presiona para Hablar";
-  setAgentState("Listo para escucharte", false);
+  const hintEl = document.getElementById("conversationModeHint");
+  const badgeEl = document.getElementById("conversationModeBadge");
+
+  if (!panel) return;
+
+  if (state.conversationActive) {
+    panel.classList.add("conversation-live");
+    if (badgeEl) badgeEl.classList.remove("paused");
+  } else {
+    panel.classList.remove("conversation-live");
+    if (badgeEl) badgeEl.classList.add("paused");
+  }
+
+  if (state.isListening) {
+    panel.classList.add("listening");
+    panel.classList.remove("speaking");
+    if (micLabel) micLabel.textContent = "🎙️ Te estoy escuchando...";
+  } else if (state.isSpeaking) {
+    panel.classList.add("speaking");
+    panel.classList.remove("listening");
+    if (micLabel) micLabel.textContent = "🔊 Respondiendo...";
+  } else {
+    panel.classList.remove("listening");
+    panel.classList.remove("speaking");
+    if (micLabel) {
+      micLabel.textContent = state.conversationActive 
+        ? "🔴 Finalizar Conversación" 
+        : "🎙️ Iniciar Conversación Continua";
+    }
+  }
+
+  if (hintEl) {
+    if (state.conversationActive) {
+      hintEl.textContent = "✨ Conversación activa: Habla cuando quieras, la IA te responde y vuelve a escucharte sola.";
+    } else {
+      hintEl.textContent = state.continuousMode 
+        ? "✨ Modo Manos Libres Activo: Haz clic para empezar y habla naturalmente sin tocar nada más." 
+        : "Modo Pulsar para Hablar: Haz clic cada vez que quieras hablar.";
+    }
+  }
 }
 
 // ============================================================================
@@ -871,7 +1211,7 @@ function initAudioVisualizer() {
 // ============================================================================
 // 9. UI Utilities, Inspector & Chat Rendering
 // ============================================================================
-function appendChatMessage(text, sender, toolName = null) {
+function appendChatMessage(text, sender, toolName = null, aiSource = null) {
   const container = document.getElementById("chatMessages");
   if (!container) return;
 
@@ -881,6 +1221,8 @@ function appendChatMessage(text, sender, toolName = null) {
   let content = `<div>${escapeHtml(text)}</div>`;
   if (toolName) {
     content += `<span class="tool-invoked-tag">⚡ WebMCP: ${escapeHtml(toolName)}</span>`;
+  } else if (aiSource && sender === 'agent') {
+    content += `<span class="tool-invoked-tag" style="background: rgba(168, 85, 247, 0.15); border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">🧠 ${escapeHtml(aiSource)}</span>`;
   }
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   content += `<span class="bubble-meta">${sender === 'user' ? 'Tú' : 'Asistente'} • ${time}</span>`;
@@ -961,19 +1303,35 @@ document.addEventListener("DOMContentLoaded", async () => {
 
   // Welcome greeting
   setTimeout(() => {
-    appendChatMessage("¡Hola! Soy tu asistente de voz WebMCP. Presiona el botón del micrófono o usa la barra espaciadora para hablarme. También puedes escribir instrucciones abajo.", "agent");
+    appendChatMessage("¡Hola! Soy tu asistente de voz WebMCP con modo de conversación continua. Presiona 'Iniciar Conversación' o la barra espaciadora y podremos hablar con total naturalidad sin pulsar botones.", "agent");
   }, 400);
 
-  // Big Mic Button
+  // Big Mic / Conversation Button
   const micBtn = document.getElementById("micButton");
   if (micBtn) {
     micBtn.addEventListener("click", (e) => {
       e.currentTarget.blur();
-      toggleListening();
+      if (state.continuousMode) {
+        toggleConversation();
+      } else {
+        toggleListening();
+      }
     });
   }
 
-  // Keyboard shortcut: Spacebar to toggle mic (when not typing in an input or activating a button)
+  // Continuous Mode Switch
+  const continuousToggle = document.getElementById("continuousModeToggle");
+  if (continuousToggle) {
+    continuousToggle.addEventListener("change", (e) => {
+      state.continuousMode = e.target.checked;
+      if (!state.continuousMode && state.conversationActive) {
+        pauseConversation();
+      }
+      updateConversationUI();
+    });
+  }
+
+  // Keyboard shortcut: Spacebar to toggle conversation (when not typing in an input or activating a button)
   window.addEventListener("keydown", (e) => {
     if (e.code === "Space") {
       if (e.repeat) return; // Ignore holding space
@@ -981,7 +1339,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         return;
       }
       e.preventDefault();
-      toggleListening();
+      if (state.continuousMode) {
+        toggleConversation();
+      } else {
+        toggleListening();
+      }
     }
   });
 
@@ -1075,4 +1437,95 @@ document.addEventListener("DOMContentLoaded", async () => {
       if (targetBody) targetBody.classList.add("active");
     });
   });
+
+  // AI Brain Config Modal Wiring
+  const aiConfigBtn = document.getElementById("aiConfigBtn");
+  const aiConfigModal = document.getElementById("aiConfigModal");
+  const closeModalBtn = document.getElementById("closeModalBtn");
+  const saveAiConfigBtn = document.getElementById("saveAiConfigBtn");
+  const aiProviderSelect = document.getElementById("aiProviderSelect");
+  const apiKeyField = document.getElementById("apiKeyField");
+  const endpointField = document.getElementById("endpointField");
+  const apiKeyInput = document.getElementById("apiKeyInput");
+  const endpointInput = document.getElementById("endpointInput");
+  const aiModelBadgeLabel = document.getElementById("aiModelBadgeLabel");
+
+  function updateProviderFieldsUI() {
+    if (!aiProviderSelect || !apiKeyField || !endpointField) return;
+    const prov = aiProviderSelect.value;
+    if (prov === "autonomous") {
+      apiKeyField.style.display = "none";
+      endpointField.style.display = "none";
+    } else if (prov === "gemini") {
+      apiKeyField.style.display = "flex";
+      endpointField.style.display = "none";
+      const lbl = document.getElementById("apiKeyLabel");
+      if (lbl) lbl.textContent = "Clave de Gemini API:";
+      if (apiKeyInput) apiKeyInput.placeholder = "AIzaSy...";
+    } else if (prov === "ollama") {
+      apiKeyField.style.display = "none";
+      endpointField.style.display = "flex";
+    } else if (prov === "openai") {
+      apiKeyField.style.display = "flex";
+      endpointField.style.display = "flex";
+      const lbl = document.getElementById("apiKeyLabel");
+      if (lbl) lbl.textContent = "Clave de API:";
+      if (apiKeyInput) apiKeyInput.placeholder = "sk-...";
+    }
+  }
+
+  function updateBadgeLabel() {
+    if (!aiModelBadgeLabel) return;
+    if (aiConfig.provider === "gemini") {
+      aiModelBadgeLabel.textContent = "Cerebro: Gemini AI";
+    } else if (aiConfig.provider === "ollama") {
+      aiModelBadgeLabel.textContent = "Cerebro: Ollama Local";
+    } else if (aiConfig.provider === "openai") {
+      aiModelBadgeLabel.textContent = "Cerebro: OpenAI";
+    } else {
+      aiModelBadgeLabel.textContent = "Cerebro: Híbrido Libre";
+    }
+  }
+
+  if (aiProviderSelect) {
+    aiProviderSelect.value = aiConfig.provider;
+    if (apiKeyInput) apiKeyInput.value = aiConfig.apiKey;
+    if (endpointInput) endpointInput.value = aiConfig.endpoint;
+    updateProviderFieldsUI();
+    updateBadgeLabel();
+
+    aiProviderSelect.addEventListener("change", updateProviderFieldsUI);
+  }
+
+  if (aiConfigBtn && aiConfigModal) {
+    aiConfigBtn.addEventListener("click", () => {
+      aiConfigModal.style.display = "flex";
+    });
+  }
+
+  if (closeModalBtn && aiConfigModal) {
+    closeModalBtn.addEventListener("click", () => {
+      aiConfigModal.style.display = "none";
+    });
+    aiConfigModal.addEventListener("click", (e) => {
+      if (e.target === aiConfigModal) aiConfigModal.style.display = "none";
+    });
+  }
+
+  if (saveAiConfigBtn && aiConfigModal) {
+    saveAiConfigBtn.addEventListener("click", () => {
+      aiConfig.provider = aiProviderSelect.value;
+      aiConfig.apiKey = apiKeyInput.value.trim();
+      aiConfig.endpoint = endpointInput.value.trim();
+
+      localStorage.setItem("webmcp_ai_provider", aiConfig.provider);
+      localStorage.setItem("webmcp_ai_key", aiConfig.apiKey);
+      localStorage.setItem("webmcp_ai_endpoint", aiConfig.endpoint);
+
+      updateBadgeLabel();
+      aiConfigModal.style.display = "none";
+      addTrace("AI_CONFIG", `Cerebro configurado: ${aiConfig.provider}`, "init");
+      appendChatMessage(`Configuración guardada. Ahora el asistente responderá con el proveedor: ${aiConfig.provider.toUpperCase()}.`, "agent", null, "Configuración");
+    });
+  }
 });
