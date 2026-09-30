@@ -45,6 +45,7 @@ import {
 export const state = {
   isListening: false,
   isSpeaking: false,
+  userIsSpeakingNow: false,
   continuousMode: true,
   conversationActive: false,
   ttsEnabled: true,
@@ -62,6 +63,7 @@ export const state = {
     values: [45, 78, 62, 90, 54, 85],
     labels: ["Ene", "Feb", "Mar", "Abr", "May", "Jun"]
   },
+  voiceLang: (typeof localStorage !== "undefined" && localStorage.getItem("webmcp_voice_lang")) || "es-AR",
   aiConfig: loadAiConfig()
 };
 
@@ -79,7 +81,7 @@ export const callbacks = {
 };
 
 // ============================================================================
-// 3. Instruction Processor & NLU Dispatcher
+// 3. Instruction Processor & WebMCP Tool Execution Engine
 // ============================================================================
 export async function processUserInstruction(rawText) {
   if (!rawText || !rawText.trim()) return;
@@ -87,48 +89,35 @@ export async function processUserInstruction(rawText) {
   const text = rawText.trim();
   appendChatMessage(text, "user");
   addTrace("VOICE_INPUT", `Instrucción recibida: "${text}"`, "voice");
-  setAgentState("Analizando instrucción...", true);
-
-  // Small delay for natural agent rhythm
-  await new Promise(r => setTimeout(r, 260));
+  setAgentState("Procesando...", true);
 
   const lower = text.toLowerCase();
   let toolToCall = null;
   let toolArgs = {};
   let directSpeechResponse = null;
 
-  // 1. Check for Theme Change (Explicit intent)
-  if (/\b(cambia(r)?|pon(er)?|modifica(r)?|aplica(r)?)\s+(el\s+)?(tema|color|estilo)\b/i.test(lower) || /\b(tema|modo)\s+(cyberpunk|esmeralda|sunset|midnight|oscuro|ne[oó]n|matrix)\b/i.test(lower)) {
-    toolToCall = "cambiar_tema";
-    if (lower.includes("cyber") || lower.includes("neón") || lower.includes("neon") || lower.includes("futurista")) {
-      toolArgs = { tema: "cyberpunk" };
-    } else if (lower.includes("esmeralda") || lower.includes("verde") || lower.includes("matrix")) {
-      toolArgs = { tema: "emerald" };
-    } else if (lower.includes("sunset") || lower.includes("atardecer") || lower.includes("rosa") || lower.includes("violeta")) {
-      toolArgs = { tema: "sunset" };
-    } else {
-      toolArgs = { tema: "midnight" };
-    }
+  // 1. Session flow controls (hands-free pause / resume)
+  if (/\b(pausa la conversaci[oó]n|para de escuchar|silencio por favor|pausa el micr[oó]fono)\b/i.test(lower)) {
+    pauseConversation(state, callbacks);
+    const pauseMsg = "Conversación pausada. Presiona el botón del micrófono o la barra espaciadora para reactivarme.";
+    appendChatMessage(pauseMsg, "agent");
+    speakResponse(pauseMsg, state, callbacks);
+    setAgentState("En pausa", false);
+    return;
   }
-  // 2. Check for Task Management (Explicit intent)
-  else if (/\b(agrega|crea|a[ñn]ade|pon|nueva)\s+(una\s+)?(tarea|nota|recordatorio)\b/i.test(lower) || /\b(completa|marcar|termina|tacha)\s+(la\s+)?tarea\b/i.test(lower) || /\b(limpia|borra|elimina)\s+(todas\s+las\s+)?tareas\b/i.test(lower)) {
-    toolToCall = "gestionar_tareas";
-    if (lower.includes("complet") || lower.includes("marcar") || lower.includes("termina")) {
-      toolArgs = { accion: "completar" };
-    } else if (lower.includes("limpia") || lower.includes("borra") || lower.includes("elimina")) {
-      toolArgs = { accion: "limpiar" };
-    } else {
-      let cleaned = text.replace(/^(agrega|crea|añade|nueva|pon)\s+(una\s+)?(tarea|nota)(\s*:)?\s*/i, "");
-      if (!cleaned || cleaned === text) {
-        cleaned = text.replace(/tarea/i, "").trim();
-      }
-      toolArgs = { accion: "agregar", texto: cleaned || "Nueva tarea desde comando de voz" };
-    }
+  if (/\b(contin[uú]a escuchando|reanuda la conversaci[oó]n|sigue escuchando)\b/i.test(lower)) {
+    startConversation(state, callbacks);
+    const resumeMsg = "Conversación reanudada. Te escucho atentamente.";
+    appendChatMessage(resumeMsg, "agent");
+    speakResponse(resumeMsg, state, callbacks);
+    setAgentState("Listo para escucharte", false);
+    return;
   }
-  // 3. Check for Timer (Explicit intent)
-  else if (/\b(inicia|pon|activa|configura|cuenta\s+regresiva)\s+(un\s+)?temporizador\b/i.test(lower) || /\b(temporizador|alarma)\s+(de\s+)?\d+\s*(segundos|minuto)/i.test(lower) || /\b(det[eé]n|para|cancela|reinicia)\s+(el\s+)?temporizador\b/i.test(lower)) {
+
+  // 2. Direct WebMCP Action Check: Timer
+  if (lower.includes("temporizador") || lower.includes("alarma") || lower.includes("cuenta regresiva") || lower.includes("timer") || (lower.includes("segundo") && (lower.includes("pon") || lower.includes("inicia") || lower.includes("cuenta")))) {
     toolToCall = "controlar_temporizador";
-    if (lower.includes("detén") || lower.includes("para") || lower.includes("stop") || lower.includes("pausa") || lower.includes("cancela")) {
+    if (lower.includes("detén") || lower.includes("deten") || lower.includes("para") || lower.includes("stop") || lower.includes("pausa") || lower.includes("cancela")) {
       toolArgs = { accion: "detener" };
     } else if (lower.includes("reinicia") || lower.includes("reset")) {
       toolArgs = { accion: "reiniciar" };
@@ -143,35 +132,59 @@ export async function processUserInstruction(rawText) {
       toolArgs = { accion: "iniciar", segundos: sec };
     }
   }
-  // 4. Check for Chart Generation (Explicit intent)
-  else if (/\b(genera|crea|muestra|haz|dibuja|actualiza)\s+(un\s+)?gr[aá]fico\b/i.test(lower) || /\b(gr[aá]fico\s+de\s+(barras|l[ií]neas|ventas|m[eé]tricas))\b/i.test(lower)) {
+  // 3. Direct WebMCP Action Check: Visual Theme
+  else if (lower.includes("tema") || lower.includes("color") || lower.includes("estilo") || lower.includes("modo")) {
+    toolToCall = "cambiar_tema";
+    if (lower.includes("cyber") || lower.includes("neón") || lower.includes("neon") || lower.includes("futurista")) {
+      toolArgs = { tema: "cyberpunk" };
+    } else if (lower.includes("esmeralda") || lower.includes("verde") || lower.includes("matrix")) {
+      toolArgs = { tema: "emerald" };
+    } else if (lower.includes("sunset") || lower.includes("atardecer") || lower.includes("rosa") || lower.includes("violeta")) {
+      toolArgs = { tema: "sunset" };
+    } else {
+      toolArgs = { tema: "midnight" };
+    }
+  }
+  // 4. Direct WebMCP Action Check: Task Management
+  else if (lower.includes("tarea") || lower.includes("nota") || lower.includes("pendiente") || lower.includes("recordatorio")) {
+    toolToCall = "gestionar_tareas";
+    if (lower.includes("complet") || lower.includes("marcar") || lower.includes("termina") || lower.includes("tacha")) {
+      toolArgs = { accion: "completar" };
+    } else if (lower.includes("limpia") || lower.includes("borra") || lower.includes("elimina")) {
+      toolArgs = { accion: "limpiar" };
+    } else {
+      let cleaned = text.replace(/^(agrega|crea|añade|nueva|pon|anota|recordar)\s+(una\s+)?(tarea|nota|recordatorio)(\s*:|\s+que|\s+para)?\s*/i, "").trim();
+      if (!cleaned || cleaned.toLowerCase() === "tarea") {
+        cleaned = text.replace(/tarea/i, "").trim();
+      }
+      toolArgs = { accion: "agregar", texto: cleaned || "Nueva tarea registrada por voz" };
+    }
+  }
+  // 5. Direct WebMCP Action Check: Dynamic Chart
+  else if (lower.includes("gráfico") || lower.includes("grafica") || lower.includes("grafico") || lower.includes("estadística") || lower.includes("estadistica") || lower.includes("ventas") || lower.includes("datos")) {
     toolToCall = "generar_grafico";
-    const isLines = lower.includes("línea") || lower.includes("lineas");
+    const isLines = lower.includes("línea") || lower.includes("lineas") || lower.includes("linea");
     toolArgs = {
       titulo: lower.includes("ventas") ? "Ventas Trimestrales" : "Métricas de Actividad",
       tipo: isLines ? "lineas" : "barras"
     };
   }
-  // 5. Check for Screen Reading
-  else if (/\b(lee|resume|qu[eé] hay en)\s+(la\s+)?pantalla\b/i.test(lower)) {
+  // 6. Direct WebMCP Action Check: Screen Content
+  else if (lower.includes("lee la pantalla") || lower.includes("leer pantalla") || lower.includes("qué hay en la pantalla") || lower.includes("resumen de pantalla")) {
     toolToCall = "leer_contenido_pantalla";
     toolArgs = { seccion: lower.includes("tarea") ? "tareas" : lower.includes("grafico") ? "grafico" : "general" };
   }
-  // 6. Check for Tools Query
-  else if (/\b(qu[eé] herramientas|lista de herramientas|qu[eé] puedes controlar|comandos disponibles)\b/i.test(lower)) {
+  // 7. Direct WebMCP Action Check: Tools Inquiry
+  else if (lower.includes("herramienta") || lower.includes("qué puedes hacer") || lower.includes("que puedes hacer") || lower.includes("capacidades") || lower.includes("comandos")) {
     toolToCall = "consultar_herramientas";
     toolArgs = {};
   }
-  // 7. Conversational Flow Session Controls (Pause/Resume Listening)
-  else if (/\b(pausa la conversaci[oó]n|para de escuchar|silencio por favor|pausa el micr[oó]fono)\b/i.test(lower)) {
-    pauseConversation(state, callbacks);
-    directSpeechResponse = "Conversación pausada. Haz clic en el botón o presiona la barra espaciadora cuando quieras que vuelva a escucharte.";
-  } else if (/\b(contin[uú]a escuchando|reanuda la conversaci[oó]n|sigue escuchando)\b/i.test(lower)) {
-    startConversation(state, callbacks);
-    directSpeechResponse = "Conversación reanudada. Te escucho.";
+  // 8. Basic Greetings & Courtesy (Immediate fast response)
+  else if (/^(hola(\s+(c[oó]mo\s+est[aá]s|qu[eé]\s+tal|c[oó]mo\s+te\s+va|c[oó]mo\s+andas|amigo|asistente))?|buenos\s+d[ií]as|buenas\s+tardes|buenas\s+noches|qu[eé]\s+tal|c[oó]mo\s+est[aá]s|c[oó]mo\s+te\s+va)[?!.,\s]*$/i.test(lower.trim())) {
+    directSpeechResponse = "¡Hola! ¿Cómo estás? Estoy muy bien y listo para escucharte. Puedes pedirme cualquier acción como iniciar un temporizador, cambiar el tema visual o gestionar tus tareas.";
   }
 
-  // Execute WebMCP tool if matched
+  // Execute Tool if requested
   if (toolToCall) {
     const tool = document.modelContext.tools.get(toolToCall);
     if (tool) {
@@ -183,26 +196,38 @@ export async function processUserInstruction(rawText) {
         addTrace("TOOL_RESULT", `Resultado: ${JSON.stringify(result)}`, "tool");
 
         let verbalResponse = result.message || "Acción completada con éxito.";
-        if (toolToCall === "consultar_herramientas") {
+        if (toolToCall === "controlar_temporizador") {
+          if (toolArgs.accion === "iniciar") {
+            verbalResponse = `Temporizador configurado e iniciado por ${toolArgs.segundos} segundos.`;
+          } else if (toolArgs.accion === "detener") {
+            verbalResponse = "Temporizador detenido.";
+          } else {
+            verbalResponse = "Temporizador reiniciado.";
+          }
+        } else if (toolToCall === "cambiar_tema") {
+          const nombres = { cyberpunk: "Cyberpunk Neón", emerald: "Esmeralda Matrix", sunset: "Atardecer Violeta", midnight: "Medianoche" };
+          verbalResponse = `Tema cambiado a ${nombres[toolArgs.tema] || toolArgs.tema}.`;
+        } else if (toolToCall === "consultar_herramientas") {
           verbalResponse = `Tengo disponibles ${result.total} herramientas: cambiar tema, gestionar tareas, controlar temporizador, generar gráficos, leer pantalla y consultar herramientas.`;
         }
 
         appendChatMessage(verbalResponse, "agent", toolToCall);
         speakResponse(verbalResponse, state, callbacks);
       } catch (err) {
+        console.error(`Error ejecutando herramienta ${toolToCall}:`, err);
         const errMsg = `Error al ejecutar la herramienta: ${err.message}`;
         appendChatMessage(errMsg, "agent");
         speakResponse(errMsg, state, callbacks);
       }
     }
   } else {
-    // Open conversational or knowledge query
+    // Open conversational or knowledge query (routed to AI brain)
     let answer = directSpeechResponse;
     let sourceLabel = null;
 
     if (!answer) {
-      setAgentState("Consultando cerebro de IA...", true);
-      addTrace("AI_QUERY", `Consultando conocimiento para: "${text}"`, "voice");
+      setAgentState("La IA está pensando...", true);
+      addTrace("AI_QUERY", `Consultando inteligencia para: "${text}"`, "voice");
       const res = await askUniversalIntelligence(text, state.aiConfig);
       answer = res.text;
       sourceLabel = res.source;
@@ -384,6 +409,21 @@ document.addEventListener("DOMContentLoaded", async () => {
       document.body.className = e.target.value;
       localStorage.setItem("webmcp_theme", e.target.value);
       renderChart(state);
+    });
+  }
+
+  // Voice Dialect Dropdown Change
+  const voiceLangSelect = document.getElementById("voiceLangSelect");
+  if (voiceLangSelect) {
+    voiceLangSelect.value = state.voiceLang;
+    voiceLangSelect.addEventListener("change", (e) => {
+      state.voiceLang = e.target.value;
+      localStorage.setItem("webmcp_voice_lang", e.target.value);
+      if (state.isListening) {
+        stopListening(state, callbacks);
+        setTimeout(() => startListening(state, callbacks), 200);
+      }
+      addTrace("VOICE_LANG", `Dialecto cambiado a: ${e.target.value}`, "voice");
     });
   }
 

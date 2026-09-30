@@ -5,10 +5,6 @@
 
 let recognition = null;
 let isRecognitionStarting = false;
-let audioContext = null;
-let analyser = null;
-let micStream = null;
-let vadInterval = null;
 
 export function initSpeechSynthesis(state) {
   if (!('speechSynthesis' in window)) return;
@@ -145,7 +141,7 @@ export function speakResponse(text, state, callbacks) {
     onDone();
   };
 
-  // Chrome 15s watchdog failsafe in case onend doesn't trigger
+  // Chrome watchdog failsafe in case onend doesn't trigger
   setTimeout(() => {
     if (state.isSpeaking && !finished) {
       console.warn("SpeechSynthesis watchdog timeout");
@@ -154,6 +150,216 @@ export function speakResponse(text, state, callbacks) {
   }, Math.max(7000, text.length * 100));
 
   window.speechSynthesis.speak(utterance);
+}
+
+function createRecognitionInstance(state, callbacks, initialTranscript = "") {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) return null;
+
+  if (recognition) {
+    try {
+      recognition.onstart = null;
+      recognition.onspeechstart = null;
+      recognition.onspeechend = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.abort();
+    } catch (e) {}
+    recognition = null;
+  }
+
+  const rec = new SpeechRecognition();
+  rec.lang = state.voiceLang || "es-AR";
+  rec.continuous = false;
+  rec.interimResults = true;
+  rec.maxAlternatives = 1;
+
+  let accumulatedTranscript = initialTranscript || "";
+  let hasHandledInstruction = false;
+  let turnDebounceTimer = null;
+
+  function commitTurn() {
+    clearTimeout(turnDebounceTimer);
+    turnDebounceTimer = null;
+    if (hasHandledInstruction) return;
+
+    const sentence = accumulatedTranscript.trim();
+    if (sentence.length >= 2) {
+      hasHandledInstruction = true;
+      accumulatedTranscript = "";
+      state.userIsSpeakingNow = false;
+      stopListening(state, callbacks);
+      if (state.continuousMode) {
+        state.conversationActive = true;
+      }
+      callbacks.onUserInstruction(sentence);
+    }
+  }
+
+  rec.onstart = () => {
+    isRecognitionStarting = false;
+    state.isListening = true;
+    callbacks.updateConversationUI();
+    const transcript = document.getElementById("transcriptLive");
+    if (transcript && !accumulatedTranscript) {
+      transcript.textContent = "Te escucho... habla libremente";
+    } else if (transcript && accumulatedTranscript) {
+      transcript.textContent = accumulatedTranscript;
+    }
+    callbacks.setAgentState(accumulatedTranscript ? `Escuchando: "${accumulatedTranscript}"` : "Escuchando...", true);
+    callbacks.addTrace("VOICE_EVENT", `Reconocimiento iniciado en idioma: ${rec.lang}`, "voice");
+  };
+
+  rec.onspeechstart = () => {
+    state.userIsSpeakingNow = true;
+    callbacks.setAgentState("Detectando tu voz...", true);
+    callbacks.addTrace("VOICE_EVENT", "Detectó sonido de voz en el micrófono", "voice");
+  };
+
+  rec.onspeechend = () => {
+    state.userIsSpeakingNow = false;
+  };
+
+  rec.onresult = (event) => {
+    // Barge-in: if assistant was still speaking, immediately cut off speech
+    if (state.isSpeaking) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
+      state.isSpeaking = false;
+    }
+
+    let interim = "";
+    let finalChunk = "";
+
+    for (let i = 0; i < event.results.length; ++i) {
+      if (event.results[i].isFinal) {
+        finalChunk += event.results[i][0].transcript + " ";
+      } else {
+        interim += event.results[i][0].transcript;
+      }
+    }
+
+    let currentDisplay = accumulatedTranscript;
+    if (finalChunk.trim()) {
+      accumulatedTranscript = (accumulatedTranscript + " " + finalChunk).trim();
+      currentDisplay = accumulatedTranscript;
+    } else if (interim.trim()) {
+      currentDisplay = (accumulatedTranscript + " " + interim).trim();
+    }
+
+    if (currentDisplay) {
+      state.userIsSpeakingNow = true;
+      const transcriptEl = document.getElementById("transcriptLive");
+      if (transcriptEl) {
+        transcriptEl.textContent = currentDisplay;
+      }
+      callbacks.setAgentState(`Escuchando: "${currentDisplay}"`, true);
+      callbacks.addTrace("VOICE_TEXT", `Detectado: "${currentDisplay}"`, "voice");
+
+      // Conversational turn-taking pause (1200ms of silence):
+      clearTimeout(turnDebounceTimer);
+      turnDebounceTimer = setTimeout(() => {
+        state.userIsSpeakingNow = false;
+        commitTurn();
+      }, 1200);
+    }
+  };
+
+  rec.onerror = (event) => {
+    isRecognitionStarting = false;
+    state.userIsSpeakingNow = false;
+    callbacks.addTrace("VOICE_ERROR", `Error de reconocimiento: ${event.error}`, "voice");
+
+    const transcriptEl = document.getElementById("transcriptLive");
+
+    if (event.error === 'no-speech') {
+      if (state.continuousMode && state.conversationActive && !state.isSpeaking && !accumulatedTranscript) {
+        if (transcriptEl && (!transcriptEl.textContent || transcriptEl.textContent.includes("Escuchando") || transcriptEl.textContent.includes("Detectando"))) {
+          transcriptEl.textContent = "Esperando tu voz... (habla cerca del micrófono)";
+        }
+      }
+      return;
+    }
+
+    if (event.error === 'network') {
+      if (transcriptEl) {
+        transcriptEl.textContent = "⚠️ Error de red con Google Speech (network). Si usas Brave o bloqueo de privacidad, permite los servicios de voz de Google.";
+      }
+      return;
+    }
+
+    if (event.error === 'audio-capture') {
+      if (transcriptEl) {
+        transcriptEl.textContent = "⚠️ No se detecta audio del micrófono. Revisa que el micrófono no esté en silencio en Windows.";
+      }
+      return;
+    }
+
+    if (event.error === 'language-not-supported') {
+      console.warn("Dialecto no soportado, probando es-ES");
+      state.voiceLang = "es-ES";
+      const sel = document.getElementById("voiceLangSelect");
+      if (sel) sel.value = "es-ES";
+      return;
+    }
+
+    if (event.error === 'not-allowed') {
+      if (transcriptEl) transcriptEl.textContent = "⚠️ Permiso de micrófono bloqueado. Haz clic en el candado en la barra de direcciones y permite el micrófono.";
+      pauseConversation(state, callbacks);
+      return;
+    }
+
+    if (event.error === 'aborted') {
+      return;
+    }
+
+    console.warn("Speech recognition notice/error:", event.error);
+    if (transcriptEl) transcriptEl.textContent = `Aviso de voz (${event.error}).`;
+  };
+
+  rec.onend = () => {
+    isRecognitionStarting = false;
+    state.userIsSpeakingNow = false;
+
+    if (hasHandledInstruction) {
+      state.isListening = false;
+      callbacks.updateConversationUI();
+      return;
+    }
+
+    // If turnDebounceTimer is active, the user spoke and may be pausing between words.
+    // Seamlessly restart with a FRESH instance passing the accumulated transcript so far!
+    if (turnDebounceTimer && state.conversationActive && !state.isSpeaking) {
+      clearTimeout(state.relistenTimeout);
+      state.relistenTimeout = setTimeout(() => {
+        if (state.conversationActive && !state.isSpeaking && !hasHandledInstruction) {
+          startListening(state, callbacks, accumulatedTranscript);
+        }
+      }, 50);
+      return;
+    }
+
+    // If idle and conversation is active, keep listening with a fresh instance
+    if (!accumulatedTranscript && state.continuousMode && state.conversationActive && !state.isSpeaking) {
+      clearTimeout(state.relistenTimeout);
+      state.relistenTimeout = setTimeout(() => {
+        if (state.continuousMode && state.conversationActive && !state.isSpeaking && !state.isListening) {
+          startListening(state, callbacks);
+        }
+      }, 200);
+      return;
+    }
+
+    if (accumulatedTranscript && !turnDebounceTimer) {
+      commitTurn();
+      return;
+    }
+
+    state.isListening = false;
+    callbacks.updateConversationUI();
+  };
+
+  return rec;
 }
 
 export function initSpeechRecognition(state, callbacks) {
@@ -166,139 +372,48 @@ export function initSpeechRecognition(state, callbacks) {
     if (pill) pill.textContent = "WebMCP: Activo (Entrada de texto)";
     return;
   }
-
-  try {
-    recognition = new SpeechRecognition();
-    recognition.lang = "es-ES";
-    recognition.continuous = false;
-    recognition.interimResults = true;
-
-    let lastRecordedTranscript = "";
-    let hasHandledInstruction = false;
-
-    recognition.onstart = () => {
-      isRecognitionStarting = false;
-      state.isListening = true;
-      lastRecordedTranscript = "";
-      hasHandledInstruction = false;
-      callbacks.updateConversationUI();
-      const transcript = document.getElementById("transcriptLive");
-      if (transcript) transcript.textContent = "Te escucho... habla libremente";
-      callbacks.setAgentState("Escuchando...", true);
-    };
-
-    recognition.onresult = (event) => {
-      // Barge-in: if assistant was still speaking, immediately cut off speech
-      if (state.isSpeaking) {
-        window.speechSynthesis.cancel();
-        state.isSpeaking = false;
-      }
-
-      let interim = "";
-      let finalTranscript = "";
-
-      for (let i = event.resultIndex; i < event.results.length; ++i) {
-        if (event.results[i].isFinal) {
-          finalTranscript += event.results[i][0].transcript;
-        } else {
-          interim += event.results[i][0].transcript;
-        }
-      }
-
-      const spoken = (finalTranscript || interim || "").trim();
-      if (spoken) {
-        lastRecordedTranscript = spoken;
-      }
-
-      const transcriptEl = document.getElementById("transcriptLive");
-      if (transcriptEl) {
-        transcriptEl.textContent = spoken || "Escuchando...";
-      }
-
-      // If speech recognition engine marked a final result:
-      if (finalTranscript && finalTranscript.trim() && !hasHandledInstruction) {
-        hasHandledInstruction = true;
-        stopListening(state, callbacks);
-        if (state.continuousMode) {
-          state.conversationActive = true;
-        }
-        callbacks.onUserInstruction(finalTranscript.trim());
-      }
-    };
-
-    recognition.onerror = (event) => {
-      isRecognitionStarting = false;
-      state.isListening = false;
-      callbacks.updateConversationUI();
-
-      if (event.error === 'no-speech') {
-        if (state.continuousMode && state.conversationActive && !state.isSpeaking) {
-          const transcriptEl = document.getElementById("transcriptLive");
-          if (transcriptEl) transcriptEl.textContent = "Esperando tu voz... (habla cuando quieras)";
-          clearTimeout(state.relistenTimeout);
-          state.relistenTimeout = setTimeout(() => {
-            if (state.continuousMode && state.conversationActive && !state.isSpeaking && !state.isListening) {
-              startListening(state, callbacks);
-            }
-          }, 300);
-          return;
-        }
-      } else if (event.error === 'not-allowed') {
-        const transcriptEl = document.getElementById("transcriptLive");
-        if (transcriptEl) transcriptEl.textContent = "Permiso de micrófono denegado. Permite el acceso para hablar.";
-        pauseConversation(state, callbacks);
-      } else {
-        const transcriptEl = document.getElementById("transcriptLive");
-        if (transcriptEl) transcriptEl.textContent = `Voz en espera (${event.error}).`;
-      }
-    };
-
-    recognition.onend = () => {
-      isRecognitionStarting = false;
-      state.isListening = false;
-      callbacks.updateConversationUI();
-
-      // CRITICAL FIX: If user spoke but Chrome ended recognition before marking isFinal=true, dispatch it now!
-      if (!hasHandledInstruction && lastRecordedTranscript && lastRecordedTranscript.trim().length > 1) {
-        hasHandledInstruction = true;
-        if (state.continuousMode) {
-          state.conversationActive = true;
-        }
-        callbacks.onUserInstruction(lastRecordedTranscript.trim());
-        return;
-      }
-
-      if (state.continuousMode && state.conversationActive && !state.isSpeaking) {
-        clearTimeout(state.relistenTimeout);
-        state.relistenTimeout = setTimeout(() => {
-          if (state.continuousMode && state.conversationActive && !state.isSpeaking && !state.isListening) {
-            startListening(state, callbacks);
-          }
-        }, 250);
-      }
-    };
-  } catch (err) {
-    console.error("Error initializing SpeechRecognition:", err);
-  }
 }
 
-export function startListening(state, callbacks) {
-  if (state.isListening || isRecognitionStarting || state.isSpeaking) return;
+export function startListening(state, callbacks, initialTranscript = "") {
+  if (state.isSpeaking) return;
 
-  if (!recognition) {
-    initSpeechRecognition(state, callbacks);
+  if (recognition) {
+    try {
+      recognition.onstart = null;
+      recognition.onspeechstart = null;
+      recognition.onspeechend = null;
+      recognition.onresult = null;
+      recognition.onerror = null;
+      recognition.onend = null;
+      recognition.abort();
+    } catch (e) {}
+    recognition = null;
   }
-  if (!recognition) return;
+
+  recognition = createRecognitionInstance(state, callbacks, initialTranscript);
+  if (!recognition) {
+    const banner = document.getElementById("transcriptLive");
+    if (banner) banner.textContent = "Reconocimiento de voz no soportado en este navegador. Usa el teclado.";
+    return;
+  }
 
   try {
     isRecognitionStarting = true;
     recognition.start();
+
+    // Watchdog to prevent isRecognitionStarting from getting stuck
+    setTimeout(() => {
+      if (isRecognitionStarting && !state.isListening) {
+        isRecognitionStarting = false;
+      }
+    }, 2500);
   } catch (e) {
     isRecognitionStarting = false;
+    console.warn("Error starting speech recognition:", e);
     if (e.name === 'InvalidStateError') {
       try { recognition.abort(); } catch (err) {}
       setTimeout(() => {
-        if (state.conversationActive && !state.isSpeaking) startListening(state, callbacks);
+        if (state.conversationActive && !state.isSpeaking) startListening(state, callbacks, initialTranscript);
       }, 300);
     }
   }
@@ -307,8 +422,13 @@ export function startListening(state, callbacks) {
 export function stopListening(state, callbacks) {
   isRecognitionStarting = false;
   state.isListening = false;
+  state.userIsSpeakingNow = false;
   if (recognition) {
-    try { recognition.abort(); } catch (err) {}
+    try {
+      recognition.stop();
+    } catch (err) {
+      try { recognition.abort(); } catch (e) {}
+    }
   }
   callbacks.updateConversationUI();
 }
@@ -323,6 +443,7 @@ export function startConversation(state, callbacks) {
 
 export function pauseConversation(state, callbacks) {
   state.conversationActive = false;
+  state.userIsSpeakingNow = false;
   clearTimeout(state.relistenTimeout);
   if ('speechSynthesis' in window) {
     window.speechSynthesis.cancel();
@@ -353,29 +474,39 @@ export function initAudioVisualizer(state) {
     ctx.clearRect(0, 0, width, height);
 
     const active = state.isListening || state.isSpeaking;
-    phase += active ? 0.15 : 0.03;
+    phase += active ? (state.userIsSpeakingNow ? 0.22 : 0.12) : 0.03;
 
     const bars = 36;
     const barWidth = width / bars - 4;
 
     for (let i = 0; i < bars; i++) {
-      let amp = 0.15;
-      if (state.isListening) {
-        amp = 0.4 + 0.5 * Math.sin(phase + i * 0.4) * Math.cos(phase * 0.5);
+      let amp = 0.12;
+
+      if (state.userIsSpeakingNow) {
+        // High energetic pulse when user is speaking
+        amp = 0.45 + 0.5 * Math.sin(phase * 1.8 + i * 0.45) * Math.cos(phase + i * 0.3);
+      } else if (state.isListening) {
+        // Active listening rhythm
+        amp = 0.25 + 0.25 * Math.sin(phase + i * 0.4) * Math.cos(phase * 0.5);
       } else if (state.isSpeaking) {
+        // Assistant speaking voice wave
         amp = 0.5 + 0.45 * Math.sin(phase * 1.5 + i * 0.3);
       } else {
-        amp = 0.1 + 0.08 * Math.sin(phase + i * 0.2);
+        // Idle gentle breathing wave
+        amp = 0.08 + 0.06 * Math.sin(phase + i * 0.2);
       }
 
-      amp = Math.max(0.08, Math.abs(amp));
+      amp = Math.max(0.08, Math.min(1.0, Math.abs(amp)));
       const barH = amp * (height - 16);
       const x = i * (barWidth + 4) + 2;
       const y = (height - barH) / 2;
 
       let color1 = "#6366f1";
       let color2 = "#a855f7";
-      if (state.isListening) {
+      if (state.userIsSpeakingNow) {
+        color1 = "#10b981"; // Emerald green when actively hearing user's voice
+        color2 = "#06b6d4"; // Cyan
+      } else if (state.isListening) {
         color1 = "#06b6d4";
         color2 = "#3b82f6";
       } else if (state.isSpeaking) {

@@ -145,14 +145,14 @@ export function initAiModal(aiConfig, onSaveCallback) {
   function updateProviderFieldsUI() {
     if (!aiProviderSelect || !apiKeyField || !endpointField) return;
     const prov = aiProviderSelect.value;
-    if (prov === "autonomous") {
+    if (prov === "free_cloud" || prov === "autonomous" || prov === "chrome_builtin") {
       apiKeyField.style.display = "none";
       endpointField.style.display = "none";
     } else if (prov === "gemini") {
       apiKeyField.style.display = "flex";
       endpointField.style.display = "none";
       const lbl = document.getElementById("apiKeyLabel");
-      if (lbl) lbl.textContent = "Clave de Gemini API:";
+      if (lbl) lbl.textContent = "Clave de Google Gemini API:";
       if (apiKeyInput) apiKeyInput.placeholder = "AIzaSy...";
     } else if (prov === "ollama") {
       apiKeyField.style.display = "none";
@@ -161,21 +161,23 @@ export function initAiModal(aiConfig, onSaveCallback) {
       apiKeyField.style.display = "flex";
       endpointField.style.display = "flex";
       const lbl = document.getElementById("apiKeyLabel");
-      if (lbl) lbl.textContent = "Clave de API:";
-      if (apiKeyInput) apiKeyInput.placeholder = "sk-...";
+      if (lbl) lbl.textContent = "Clave de API (OpenAI o Groq):";
+      if (apiKeyInput) apiKeyInput.placeholder = "gsk_... o sk-...";
     }
   }
 
   function updateBadgeLabel() {
     if (!aiModelBadgeLabel) return;
     if (aiConfig.provider === "gemini") {
-      aiModelBadgeLabel.textContent = "Cerebro: Gemini AI";
+      aiModelBadgeLabel.textContent = "Cerebro: Gemini 2.0 Flash";
+    } else if (aiConfig.provider === "chrome_builtin") {
+      aiModelBadgeLabel.textContent = "Cerebro: Chrome AI (Local)";
     } else if (aiConfig.provider === "ollama") {
       aiModelBadgeLabel.textContent = "Cerebro: Ollama Local";
     } else if (aiConfig.provider === "openai") {
-      aiModelBadgeLabel.textContent = "Cerebro: OpenAI";
+      aiModelBadgeLabel.textContent = "Cerebro: OpenAI / Groq";
     } else {
-      aiModelBadgeLabel.textContent = "Cerebro: Híbrido Libre";
+      aiModelBadgeLabel.textContent = "Cerebro: IA Libre (GPT-OSS)";
     }
   }
 
