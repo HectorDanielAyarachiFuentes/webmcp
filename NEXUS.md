@@ -7,34 +7,31 @@
 
 ## 📌 Estado Actual del Proyecto
 - **Especificación WebMCP:** Archivos base del estándar W3C intactos y protegidos según [AGENT_RULES.md](file:///c:/Users/Ramoncito/.antigravity-ide/webmcp/AGENT_RULES.md).
-- **Voice Studio (`demo/`):**
-  - ✅ Entrada y salida de voz bidireccional (SpeechRecognition + SpeechSynthesis).
-  - ✅ Modo Conversación Continua Manos Libres (*Turn-taking* con reapertura automática y tonos *chime* de turno).
-  - ✅ Tolerancia a silencios y protección contra errores de estado `InvalidStateError`.
-  - ✅ 5 Herramientas WebMCP funcionales (`cambiar_tema`, `gestionar_tareas`, `controlar_temporizador`, `generar_grafico`, `consultar_herramientas`).
-  - ✅ Cerebro Híbrido Autónomo: Responde preguntas abiertas sobre cualquier tema consultando Wikipedia en tiempo real y base de conocimiento especializada.
-  - ✅ Soporte para conectar proveedores LLM externos (Google Gemini, Ollama local, OpenAI).
+- **Arquitectura Modular (`demo/js/`):**
+  - ✅ `webmcp-core.js`: Polyfill estándar de `document.modelContext` y registro de herramientas.
+  - ✅ `ai-brain.js`: Cerebro de conocimiento universal (cálculo matemático, reloj del sistema, capitales mundiales, Wikipedia en vivo con redirecciones, explicador conceptual y LLMs externos).
+  - ✅ `voice-engine.js`: Full-duplex con *turn-taking*, barge-in, rescate de transcripción en `onend` y prevención de garbage-collector en `SpeechSynthesis`.
+  - ✅ `widgets.js`: Gestión de tareas con persistencia en `localStorage`, temporizador y gráfico Canvas.
+  - ✅ `ui.js`: Renderizado de chat, trazas de telemetría, inspector de herramientas y modal de configuración.
+  - ✅ `app.js`: Orquestador ES6 limpio y desacoplado (sin ciclos de dependencias, verificado por GitNexus).
 
 ---
 
 ## ⚡ Backlog de Mejoras Prioritarias (Cosas a Mejorar)
 
 ### 1. 🎙️ Experiencia de Voz y Audio
-- [ ] **Voice Activity Detection (VAD) en Web Audio:** Incorporar detección de nivel de decibelios para cortar los silencios finales de forma instantánea sin esperar el timeout del navegador.
-- [ ] **Barge-in por Voz (Interrupción hablada):** Permitir que el usuario hable *encima* del asistente para interrumpirlo automáticamente cuando esté hablando, cancelando la síntesis de voz al instante.
-- [ ] **Selector de Acentos y Voces:** Añadir un menú visual para seleccionar voces específicas en español (latinoamericano, español de España, tono y velocidad preferida).
+- [x] **Corrección de Transcripción Silenciosa:** Rescate de voz acumulada cuando Chrome finaliza el micrófono antes de emitir `isFinal=true`.
+- [x] **Prevención de Bloqueo de Voz:** Protección contra el bug de recolección de basura de Chrome en `SpeechSynthesisUtterance`.
+- [ ] **Selector de Acentos y Voces en UI:** Menú visual para elegir voces específicas en español (latinoamericano, español de España, tono y velocidad preferida).
 
 ### 2. 🛠️ Nuevas Herramientas WebMCP
+- [x] **Herramienta de Lectura de Contenido:** Añadida herramienta `leer_contenido_pantalla` para resumir tareas, gráficos o estado general.
 - [ ] **Herramienta de Formularios Declarativos:** Implementar la propuesta declarativa HTML (`<form modelcontext ...>`) para que el agente rellene y envíe formularios sin tocar JavaScript.
-- [ ] **Herramienta de Lectura y Resumen de Contenido:** Crear una herramienta `leer_seccion_pagina` para que el asistente pueda leer y resumir cualquier bloque de texto visible en pantalla.
 - [ ] **Control Multimedia:** Añadir herramientas para pausar/reproducir elementos de audio o video en la página web.
 
 ### 3. 🧠 Memoria y Contexto Conversacional
-- [ ] **Memoria de Sesión Persistente:** Guardar las preferencias del usuario (nombre, temas favoritos, tareas pendientes) en `localStorage` o IndexedDB para recordarlas entre recargas de página.
+- [x] **Memoria de Sesión Persistente:** Guardado automático de tareas, tema y configuración del cerebro en `localStorage`.
 - [ ] **Exportación de Historial:** Botón para descargar el log de la conversación y las trazas de ejecución en formato Markdown o JSON.
-
-### 4. 🌐 Diagnóstico de Soporte Nativo WebMCP
-- [ ] **Detector de Flags del Navegador:** Panel de diagnóstico que compruebe si el navegador actual tiene habilitado el flag nativo de Chromium `about:flags#enable-webmcp-testing` o el Origin Trial activo.
 
 ---
 
@@ -47,6 +44,10 @@
 | **2026-09-29** | Implementación del Modo Conversación Continua Manos Libres (*Turn-taking* automático y chimes) | `demo/index.html`, `demo/app.js`, `demo/style.css` |
 | **2026-09-29** | Eliminación de respuestas enlatadas; integración de Cerebro Híbrido Autónomo (Wikipedia en vivo + MCP knowledge) y soporte LLM (Gemini/Ollama) | `demo/index.html`, `demo/app.js`, `demo/style.css` |
 | **2026-09-29** | Creación del sistema de directivas del agente y backlog evolutivo | `AGENT_RULES.md`, `.agents/rules/agent_rules.md`, `NEXUS.md` |
+| **2026-09-29** | Refactorización modular integral: separación en `webmcp-core`, `ai-brain`, `voice-engine`, `widgets` y `ui` | `demo/js/*`, `demo/app.js`, `demo/index.html` |
+| **2026-09-29** | Corrección de bug de habla ignorada (captura en `onend`) y bug de Chrome GC en síntesis vocal | `demo/js/voice-engine.js` |
+| **2026-09-29** | Incorporación de motor universal de respuestas: matemáticas, reloj en tiempo real, capitales del mundo, redirecciones de Wikipedia | `demo/js/ai-brain.js` |
+| **2026-09-29** | Generación de Favicon SVG/ICO para eliminar error 404 en consola | `demo/index.html`, `demo/favicon.ico` |
 
 ---
 
