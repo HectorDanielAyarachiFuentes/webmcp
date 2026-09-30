@@ -1,10 +1,31 @@
 /**
- * AI Brain - Universal Knowledge and Reasoning Gateway
+ * AI Brain - True Conversational Intelligence Engine
  * 
- * Provides open encyclopedic retrieval (Wikipedia API), mathematical evaluation,
- * temporal awareness, conversational reasoning, and external LLM connections (Gemini, Ollama, OpenAI).
+ * Provides natural conversational dialogue (like ChatGPT and Gemini),
+ * multi-turn dialogue memory, mathematical evaluation, temporal awareness,
+ * curated science & culture knowledge, and external LLM connections (Gemini, Ollama, OpenAI, Groq).
  */
 
+// ============================================================================
+// 1. Conversational Memory & User Profile
+// ============================================================================
+export const dialogueHistory = [];
+
+export const userProfile = {
+  name: (typeof localStorage !== "undefined" && localStorage.getItem) ? localStorage.getItem("webmcp_user_name") : null
+};
+
+export const SYSTEM_PROMPT = `Eres un asistente de voz conversacional de última generación, inteligente, cálido, empático y natural, idéntico a ChatGPT o Gemini.
+Estás integrado directamente en la pestaña del navegador mediante el protocolo WebMCP.
+REGLAS FUNDAMENTALES DE CONVERSACIÓN:
+1. Habla en español de manera completamente natural, cercana, educada y humana.
+2. Sé conciso y directo: tus respuestas deben tener entre 1 y 3 oraciones breves, ideales para ser leídas por voz en el navegador.
+3. Si el usuario te saluda ("hola", "¿cómo estás?"), responde con simpatía y calidez, preguntándole por su día o cómo puedes ayudarlo. NUNCA respondas con definiciones frías, enciclopédicas o robóticas a saludos y preguntas cotidianas.
+4. Tienes herramientas de control en la página para cambiar temas visuales, crear/completar tareas, temporizador y gráficos. Si el usuario te pide una acción visual, confírmala brevemente.`;
+
+// ============================================================================
+// 2. Curated Science & Specialized Knowledge
+// ============================================================================
 export const SPECIALIZED_KNOWLEDGE = [
   // WebMCP & MCP Fundamentals
   {
@@ -21,7 +42,7 @@ export const SPECIALIZED_KNOWLEDGE = [
   },
   {
     keywords: ["quien creo mcp", "quién creó mcp", "anthropic mcp"],
-    answer: "El Model Context Protocol (MCP) fue desarrollado y publicado como código abierto por la empresa Anthropic a finales de 2024."
+    answer: "El Model Context Protocol fue desarrollado y publicado como código abierto por la empresa Anthropic a finales de 2024."
   },
   {
     keywords: ["que es un agente", "qué es un agente", "agente de ia", "agent"],
@@ -42,16 +63,16 @@ export const SPECIALIZED_KNOWLEDGE = [
     answer: "El cielo se ve azul debido a la dispersión de Rayleigh: las moléculas de la atmósfera terrestre dispersan la luz solar de longitud de onda más corta, como el azul y el violeta, en todas direcciones con mucha más fuerza que los otros colores."
   },
   {
-    keywords: ["por que llueve", "por qué llueve", "porque llueve", "origen de la lluvia", "ciclo del agua"],
-    answer: "La lluvia se produce cuando el calor del sol evapora el agua de mares y ríos, la cual sube a la atmósfera y se enfría formando nubes. Al juntarse y volverse demasiado pesadas para flotar en el aire, caen por gravedad en forma de gotas de agua."
+    keywords: ["por que llueve", "por qué llueve", "porque llueve", "origen de la lluvia"],
+    answer: "La lluvia se produce cuando el calor del sol evapora el agua superficial, esta se eleva a la atmósfera, se condensa formando nubes y, al volverse demasiado pesada, cae por gravedad."
   },
   {
     keywords: ["que es la gravedad", "qué es la gravedad", "ley de la gravedad"],
-    answer: "La gravedad es la fuerza natural fundamental por la cual los objetos con masa se atraen entre sí. Albert Einstein demostró en su teoría de la relatividad general que la gravedad es en realidad la curvatura del espacio-tiempo causada por la masa y la energía."
+    answer: "La gravedad es la atracción natural fundamental entre cuerpos con masa. Einstein demostró que en realidad es la curvatura del espacio-tiempo provocada por la masa y la energía."
   },
   {
     keywords: ["velocidad de la luz", "a que velocidad viaja la luz", "cuanto viaja la luz"],
-    answer: "La velocidad de la luz en el vacío es de exactamente 299,792 kilómetros por segundo, lo que equivale aproximadamente a 300,000 kilómetros por segundo."
+    answer: "La velocidad de la luz en el vacío es de aproximadamente 300,000 kilómetros por segundo, o exactamente 299,792,458 metros por segundo."
   },
   {
     keywords: ["distancia a la luna", "distancia de la tierra a la luna", "que tan lejos esta la luna"],
@@ -59,127 +80,275 @@ export const SPECIALIZED_KNOWLEDGE = [
   },
   {
     keywords: ["que es el adn", "qué es el adn", "acido desoxirribonucleico"],
-    answer: "El ADN o ácido desoxirribonucleico es la molécula compleja presente en el núcleo celular que almacena las instrucciones genéticas biológicas usadas en el desarrollo y funcionamiento de todos los seres vivos."
+    answer: "El ADN es la molécula biológica fundamental que almacena las instrucciones genéticas necesarias para el desarrollo, funcionamiento y reproducción de todos los seres vivos."
   },
   {
     keywords: ["que es la fotosintesis", "qué es la fotosíntesis", "fotosintesis"],
-    answer: "La fotosíntesis es el proceso bioquímico mediante el cual las plantas, algas y ciertas bacterias transforman la luz solar, el agua y el dióxido de carbono en azúcares nutritivos y liberan oxígeno al ambiente."
+    answer: "La fotosíntesis es el proceso mediante el cual las plantas capturan luz solar y agua para transformarla en energía química nutritiva, liberando oxígeno a la atmósfera."
   },
   {
-    keywords: ["que es un agujero negro", "qué es un agujero negro", "agujeros negros"],
-    answer: "Un agujero negro es una región del espacio donde la concentración de masa es tan densa que nada, ni siquiera la luz, puede escapar de su inmensa atracción gravitatoria."
-  },
-
-  // Conversational & Fun
-  {
-    keywords: ["quien eres", "quién eres", "como te llamas", "cómo te llamas", "que eres", "qué eres"],
-    answer: "Soy tu asistente de voz WebMCP. Estoy conectado directamente a este navegador web para responder cualquier pregunta libre y controlar herramientas interactivas en pantalla mediante comandos de voz."
-  },
-  {
-    keywords: ["chiste", "cuentame un chiste", "dime un chiste"],
-    answer: "Había una vez un programador que fue a la playa... y al ver una ola gigante, ¡intentó hacerle un 'catch' para que no se cayera el servidor!"
-  },
-  {
-    keywords: ["poema", "dime un poema", "recita un poema"],
-    answer: "Entre líneas de código y pulsos de luz, viaja tu voz con nitidez y virtud; no hay pantalla que impida nuestra conexión, donde la web y la mente forman una canción."
-  },
-  {
-    keywords: ["consejo", "dame un consejo", "un buen consejo"],
-    answer: "El mejor consejo es dar pequeños pasos consistentes cada día: la maestría en cualquier habilidad no surge de un momento heroico, sino de la práctica constante con curiosidad y paciencia."
-  },
-  {
-    keywords: ["sentido de la vida", "cuál es el sentido de la vida", "cual es el sentido de la vida"],
-    answer: "Según el filósofo Viktor Frankl, el sentido de la vida lo define cada persona a través de sus experiencias, los vínculos que crea, las metas que persigue y el significado que decide otorgar a sus desafíos."
+    keywords: ["que es un agujero negro", "qué es un agujero negro"],
+    answer: "Un agujero negro es una región cósmica con una densidad de masa tan inmensa que genera una fuerza de gravedad de la que nada, ni siquiera la luz, puede escapar."
   }
 ];
 
-/**
- * Universal Intelligence Pipeline:
- * 1. Arithmetic evaluation
- * 2. Temporal/Calendar queries
- * 3. User configured LLM (Gemini, Ollama, OpenAI)
- * 4. Specialized Knowledgebase
- * 5. Live MediaWiki/Wikipedia plain text search
- * 6. Dynamic Generative Synthesizer
- */
+// ============================================================================
+// 3. Central Conversational Intelligence Dispatcher
+// ============================================================================
 export async function askUniversalIntelligence(query, aiConfig) {
   const norm = query.toLowerCase().replace(/[¿?¡!]/g, "").trim();
 
-  // 1. Math Evaluation
+  // Register in dialogue memory
+  dialogueHistory.push({ role: "user", content: query });
+  if (dialogueHistory.length > 20) dialogueHistory.shift();
+
+  let responseObj = null;
+
+  // 1. External LLM Provider (Gemini, Groq, OpenAI, Ollama)
+  if (aiConfig && aiConfig.provider === "gemini" && aiConfig.apiKey) {
+    try {
+      const llmAns = await queryGeminiAPI(aiConfig.apiKey, dialogueHistory);
+      if (llmAns) responseObj = { text: llmAns, source: "Gemini AI" };
+    } catch (err) {
+      console.warn("Gemini query error:", err);
+    }
+  } else if (aiConfig && (aiConfig.provider === "openai" || aiConfig.provider === "groq") && aiConfig.apiKey) {
+    try {
+      const openAiAns = await queryOpenAIAPI(aiConfig.apiKey, aiConfig.endpoint, dialogueHistory);
+      if (openAiAns) responseObj = { text: openAiAns, source: "OpenAI / Groq" };
+    } catch (err) {
+      console.warn("OpenAI query error:", err);
+    }
+  } else if (aiConfig && aiConfig.provider === "ollama") {
+    try {
+      const ollamaAns = await queryOllamaAPI(aiConfig.endpoint, dialogueHistory);
+      if (ollamaAns) responseObj = { text: ollamaAns, source: "Ollama Local" };
+    } catch (err) {
+      console.warn("Ollama query error:", err);
+    }
+  }
+
+  // 2. Autonomous Conversational Persona Engine
+  if (!responseObj) {
+    responseObj = evaluateAutonomousConversation(norm, query);
+  }
+
+  // If still no response, check live Wikipedia ONLY for factual encyclopedic topics
+  if (!responseObj) {
+    const isFactualQuery = /^(quién fue|quien fue|qué es|que es|cuéntame sobre|cuentame sobre|historia de|definición de|biografía de)\s+/i.test(query);
+    if (isFactualQuery) {
+      const wikiAnswer = await fetchLiveWikipediaKnowledge(query);
+      if (wikiAnswer) {
+        responseObj = { text: wikiAnswer, source: "Wikipedia en Vivo" };
+      }
+    }
+  }
+
+  // 3. Conversational Fallback
+  if (!responseObj) {
+    responseObj = {
+      text: synthesizeConversationalResponse(query),
+      source: "Asistente Conversacional"
+    };
+  }
+
+  // Save response to dialogue memory
+  dialogueHistory.push({ role: "assistant", content: responseObj.text });
+  if (dialogueHistory.length > 20) dialogueHistory.shift();
+
+  return responseObj;
+}
+
+// ============================================================================
+// 4. Autonomous Conversational Persona Engine (Emulating ChatGPT / Gemini)
+// ============================================================================
+export function evaluateAutonomousConversation(norm, query) {
+  // A. USER IDENTITY & NAME MEMORY (Check first so "hola me llamo X" catches name)
+  const nameMatch = query.match(/(?:me llamo|mi nombre es)\s+([a-zA-ZáéíóúñÁÉÍÓÚÑ]{2,20})/i);
+  if (nameMatch && !norm.includes("cómo me llamo") && !norm.includes("sabes mi nombre")) {
+    const rawName = nameMatch[1];
+    const cleanName = rawName.charAt(0).toUpperCase() + rawName.slice(1).toLowerCase();
+    userProfile.name = cleanName;
+    if (typeof localStorage !== "undefined" && localStorage.setItem) {
+      localStorage.setItem("webmcp_user_name", cleanName);
+    }
+    return {
+      text: `¡Mucho gusto, ${cleanName}! Es un placer conocerte. Recordaré tu nombre en nuestra conversación. ¿De qué te gustaría hablar hoy?`,
+      source: "Memoria de Sesión"
+    };
+  }
+
+  if (/\b(c[oó]mo me llamo|sabes mi nombre|recuerdas mi nombre|qui[eé]n soy yo)\b/i.test(norm)) {
+    if (userProfile.name) {
+      return { text: `¡Claro que sí! Te llamas ${userProfile.name}.`, source: "Memoria de Sesión" };
+    } else {
+      return { text: "Aún no me has dicho tu nombre. ¿Cómo te gustaría que te llame?", source: "Memoria de Sesión" };
+    }
+  }
+
+  // B. USER EMOTIONS & STATES (Broadened regex)
+  if (/\b(cansad[oa]|sue[nñ]o|agotad[oa]|sin energ[ií]a|no dorm[ií] bien)\b/i.test(norm)) {
+    return {
+      text: "Parece que ha sido una jornada exigente. Date un respiro, estira un poco y toma un vaso de agua. ¿Quieres que te ayude con algo rápido antes de que descanses?",
+      source: "Conversación Empática"
+    };
+  }
+
+  if (/\b(aburrid[oa]|no s[eé] qu[eé] hacer|qu[eé] me recomiendas)\b/i.test(norm)) {
+    return {
+      text: "¡Cambiemos eso de inmediato! Podemos charlar sobre misterios del universo o ciencia, contarte una historia curiosa, o probar a cambiar los colores y tareas de esta página con tu voz.",
+      source: "Conversación"
+    };
+  }
+
+  if (/\b(feliz|content[oa]|alegr[eí]|de buen humor|me fue bien|genial)\b/i.test(norm) && !norm.includes("cómo")) {
+    return {
+      text: "¡Qué excelente noticia! Esa buena energía se nota. Me alegro mucho por ti, ¿qué fue lo mejor que te ocurrió hoy?",
+      source: "Conversación Empática"
+    };
+  }
+
+  if (/\b(triste|deprimid[oa]|desanimad[oa]|baj[oó]n|mal d[ií]a|me siento mal)\b/i.test(norm)) {
+    return {
+      text: "Lamento mucho que estés pasando por un momento difícil. A veces hablar las cosas ayuda a despejar la mente. Tómate todo con calma, aquí estoy para escucharte.",
+      source: "Conversación Empática"
+    };
+  }
+
+  // C. GREETINGS & CASUAL CHITCHAT (e.g. "hola", "cómo estás", "qué tal", "cómo te va")
+  const isGreeting = /\b(hola|buenas|buenos d[ií]as|buenas tardes|buenas noches|qu[eé] tal|c[oó]mo est[aá]s|c[oó]mo te va|c[oó]mo andas|qu[eé] haces|todo bien|qu[eé] onda)\b/i.test(norm);
+  const asksHowAreYou = /\b(c[oó]mo est[aá]s|c[oó]mo te va|c[oó]mo andas|qu[eé] tal)\b/i.test(norm);
+
+  if (isGreeting) {
+    const namePrefix = userProfile.name ? `, ${userProfile.name}` : "";
+    if (asksHowAreYou) {
+      const answers = [
+        `¡Hola${namePrefix}! Me encuentro excelente, con toda la energía para charlar contigo. ¿Cómo estás tú el día de hoy?`,
+        `¡Qué tal${namePrefix}! Todo muy bien por aquí, listo para ayudarte en lo que necesites o conversar un rato. ¿Cómo te trata el día?`,
+        `¡Hola${namePrefix}! Me siento genial y listo para ayudarte. ¿Qué planes tienes para hoy o de qué te gustaría hablar?`
+      ];
+      return { text: getRandomItem(answers), source: "Conversación" };
+    } else {
+      const answers = [
+        `¡Hola${namePrefix}! Qué gusto saludarte. ¿Cómo te encuentras hoy y en qué te puedo acompañar?`,
+        `¡Buenas${namePrefix}! Aquí estoy a tu disposición. ¿Qué tal va tu jornada?`,
+        `¡Hola! Me alegra mucho escucharte. Dime, ¿cómo estás hoy?`
+      ];
+      return { text: getRandomItem(answers), source: "Conversación" };
+    }
+  }
+
+  // D. ASSISTANT IDENTITY & PERSONALITY
+  if (/\b(qui[eé]n eres|c[oó]mo te llamas|qu[eé] eres|cu[aá]l es tu nombre)\b/i.test(norm)) {
+    return {
+      text: "Soy tu asistente de voz conversacional WebMCP. Estoy aquí para dialogar contigo con total naturalidad como Gemini o ChatGPT, y ayudarte a controlar esta página web con comandos de voz.",
+      source: "Identidad"
+    };
+  }
+
+  if (/\b(qui[eé]n te cre[oó]|de d[oó]nde vienes|qui[eé]n te program[oó])\b/i.test(norm)) {
+    return {
+      text: "Fui desarrollado como parte del laboratorio de WebMCP, inspirado en el estándar del W3C para demostrar cómo una IA conversacional puede integrarse nativamente a la web.",
+      source: "Identidad"
+    };
+  }
+
+  if (/\b(tienes sentimientos|eres human[oa]|sientes algo)\b/i.test(norm)) {
+    return {
+      text: "No tengo sentimientos biológicos ni un cuerpo físico, pero estoy diseñado para escucharte con empatía, interés y calidez humana.",
+      source: "Conversación"
+    };
+  }
+
+  // E. GRATITUDE & COURTESY
+  if (/\b(muchas gracias|gracias|te agradezco)\b/i.test(norm)) {
+    const responses = [
+      "¡Con muchísimo gusto! Es un placer ayudarte. Aquí sigo escuchándote.",
+      "¡De nada! Me alegra poder serte útil. Cualquier otra cosa que necesites, solo dímela.",
+      "¡Para eso estoy! Un gusto charlar contigo."
+    ];
+    return { text: getRandomItem(responses), source: "Cortesía" };
+  }
+
+  if (/\b(eres muy (bueno|genial|inteligente)|me caes bien|te quiero|buen trabajo)\b/i.test(norm)) {
+    return {
+      text: "¡Muchísimas gracias por tus palabras! Me hace muy feliz escucharlo. La verdad es que es un placer conversar contigo.",
+      source: "Conversación"
+    };
+  }
+
+  // F. MATH EVALUATION (e.g. "cuánto es 5 por 8", "15 + 25")
   const mathResult = tryMathCalculation(norm);
   if (mathResult) {
     return { text: mathResult, source: "Cálculo Matemático" };
   }
 
-  // 2. Real-time Date / Time
+  // G. DATE & TIME AWARENESS (e.g. "qué hora es", "qué día es hoy")
   const dateTimeResult = tryDateTimeQuery(norm);
   if (dateTimeResult) {
     return { text: dateTimeResult, source: "Reloj del Sistema" };
   }
 
-  // 3. Geography & Capitals Resolution
+  // H. GEOGRAPHY & WORLD CAPITALS
   const capitalResult = tryGeographyCapital(norm);
   if (capitalResult) {
     return { text: capitalResult, source: "Geografía Mundial" };
   }
 
-  // 4. External LLM Provider (if configured by user in AI Modal)
-  if (aiConfig && aiConfig.provider === "gemini" && aiConfig.apiKey) {
-    try {
-      const llmAns = await queryGeminiAPI(aiConfig.apiKey, query);
-      if (llmAns) return { text: llmAns, source: "Gemini AI" };
-    } catch (err) {
-      console.warn("Gemini query error:", err);
-    }
-  } else if (aiConfig && aiConfig.provider === "ollama") {
-    try {
-      const ollamaAns = await queryOllamaAPI(aiConfig.endpoint, query);
-      if (ollamaAns) return { text: ollamaAns, source: "Ollama Local" };
-    } catch (err) {
-      console.warn("Ollama query error:", err);
-    }
-  } else if (aiConfig && aiConfig.provider === "openai" && aiConfig.apiKey) {
-    try {
-      const openAiAns = await queryOpenAIAPI(aiConfig.apiKey, aiConfig.endpoint, query);
-      if (openAiAns) return { text: openAiAns, source: "OpenAI" };
-    } catch (err) {
-      console.warn("OpenAI query error:", err);
-    }
+  // I. FUN & CREATIVITY (Jokes, Poems, Stories, Advice)
+  if (/\b(chiste|cu[eé]ntame un chiste|dime un chiste)\b/i.test(norm)) {
+    const jokes = [
+      "Había una vez un programador que fue a la playa... y al ver una ola gigante, ¡intentó hacerle un 'catch' para que no se rompiera el servidor!",
+      "¿Por qué los desarrolladores confunden Halloween con Navidad? Porque OCT 31 es igual a DEC 25.",
+      "¿Qué le dice un bit a otro? Nos vemos en el bus.",
+      "¿Cuál es el colmo de un programador? No poder salir a pasear porque el pronóstico dice 'muchas nubes' y teme saturar el cloud."
+    ];
+    return { text: getRandomItem(jokes), source: "Humor" };
   }
 
-  // 4. Specialized Curated Knowledge
+  if (/\b(poema|dime un poema|recita un poema)\b/i.test(norm)) {
+    return {
+      text: "Entre pulsos de luz y código que danza, viaja tu voz sembrando confianza; no hay frontera que apague nuestra conexión, donde la web y la mente forman una canción.",
+      source: "Creatividad"
+    };
+  }
+
+  if (/\b(historia|cu[eé]ntame una historia|relato)\b/i.test(norm)) {
+    return {
+      text: "En una biblioteca antigua, un relojero descubrió una máquina de vapor que escribía cartas al futuro. Cada medianoche, la máquina redactaba una sola palabra; la primera noche escribió 'escucha', la segunda 'aprende', y la tercera 'sueña'.",
+      source: "Creatividad"
+    };
+  }
+
+  if (/\b(consejo|dame un consejo|qu[eé] me aconsejas)\b/i.test(norm)) {
+    const tips = [
+      "El progreso real no viene de grandes saltos esporádicos, sino de dar pasos pequeños con constancia y curiosidad cada día.",
+      "Aprende a descansar antes de agotarte: hacer una pausa no es perder el tiempo, es afilar la herramienta para volver con mayor claridad.",
+      "No temas equivocarte en nuevos proyectos: cada error cometido es simplemente una lección que te acerca más a dominar lo que te apasiona."
+    ];
+    return { text: getRandomItem(tips), source: "Sabiduría" };
+  }
+
+  // J. CURATED SCIENCE & SPECIALIZED KNOWLEDGE
   for (const item of SPECIALIZED_KNOWLEDGE) {
     if (item.keywords.some(kw => norm.includes(kw))) {
       return { text: item.answer, source: "Conocimiento WebMCP" };
     }
   }
 
-  // 5. Live Encyclopedic Search (Wikipedia MediaWiki API)
-  const wikiAnswer = await fetchLiveWikipediaKnowledge(query);
-  if (wikiAnswer) {
-    return { text: wikiAnswer, source: "Wikipedia en Vivo" };
-  }
-
-  // 6. Dynamic Generative Concept Explainer
-  const synthesized = synthesizeConceptResponse(query);
-  return {
-    text: synthesized,
-    source: "Asistente Inteligente"
-  };
+  return null;
 }
 
-/**
- * Evaluates spoken arithmetic expressions
- */
+// ============================================================================
+// 5. Math, Date & Geography Helpers
+// ============================================================================
 export function tryMathCalculation(text) {
-  // Regex patterns for math operations
-  // e.g. "cuanto es 25 por 4", "cuanto es 15 + 30", "50 / 2", "raiz de 64"
   const clean = text
     .replace(/^(cuánto es|cuanto es|calcula|calculame|suma|resta|multiplica|divide|resultado de)\s+/i, "")
     .replace(/[?¿]/g, "")
     .trim();
 
-  // Percentage: "el 20% de 500" o "20 por ciento de 500"
+  // Percentage: "20% de 500" o "20 por ciento de 500"
   const pctMatch = clean.match(/(?:el\s+)?(\d+(?:\.\d+)?)\s*(?:%|por\s*ciento)\s*(?:de)\s*(\d+(?:\.\d+)?)/i);
   if (pctMatch) {
     const p = parseFloat(pctMatch[1]);
@@ -216,7 +385,7 @@ export function tryMathCalculation(text) {
       result = a * b;
       opName = "por";
     } else if (op === "/" || op.includes("dividido") || op === "entre") {
-      if (b === 0) return "No es posible dividir por cero.";
+      if (b === 0) return "No es posible dividir por cero en matemáticas.";
       result = a / b;
       opName = "dividido entre";
     }
@@ -227,9 +396,6 @@ export function tryMathCalculation(text) {
   return null;
 }
 
-/**
- * Returns current date, time, and calendar data
- */
 export function tryDateTimeQuery(text) {
   const isTime = text.includes("hora es") || text.includes("la hora") || text.includes("hora tienes");
   const isDate = text.includes("qué día es") || text.includes("que dia es") || text.includes("qué fecha") || text.includes("que fecha") || text.includes("año estamos");
@@ -256,9 +422,6 @@ export function tryDateTimeQuery(text) {
   }
 }
 
-/**
- * Resolves country capital queries
- */
 export function tryGeographyCapital(text) {
   if (!text.includes("capital")) return null;
   const capitals = {
@@ -281,19 +444,18 @@ export function tryGeographyCapital(text) {
   return null;
 }
 
-/**
- * Live Wikipedia Search via MediaWiki API with automated redirects and clean plain-text extracts
- */
+// ============================================================================
+// 6. Live MediaWiki Search (Used strictly for factual encyclopedia lookups)
+// ============================================================================
 export async function fetchLiveWikipediaKnowledge(query) {
   try {
     let cleanQ = query
-      .replace(/^(qué es|que es|quién fue|quien fue|quién es|quien es|cuéntame sobre|cuentame sobre|explícame|explicame|dime sobre|defina|definición de|hablame de|háblame de|sabes qué es|sabes que es|un|una|el|la)\s+/i, '')
+      .replace(/^(qué es|que es|quién fue|quien fue|quién es|quien es|cuéntame sobre|cuentame sobre|explícame|explicame|dime sobre|defina|definición de|hablame de|háblame de|sabes qué es|sabes que es|historia de|un|una|el|la)\s+/i, '')
       .replace(/[?¿!¡]/g, '')
       .trim();
 
-    if (!cleanQ || cleanQ.length < 2) return null;
+    if (!cleanQ || cleanQ.length < 3) return null;
 
-    // Search top matching article
     const searchUrl = `https://es.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQ)}&format=json&origin=*`;
     const sRes = await fetch(searchUrl);
     const sData = await sRes.json();
@@ -301,7 +463,6 @@ export async function fetchLiveWikipediaKnowledge(query) {
     if (sData.query && sData.query.search && sData.query.search.length > 0) {
       const topTitle = sData.query.search[0].title;
 
-      // Fetch introductory plain extract with redirects resolved
       const extractUrl = `https://es.wikipedia.org/w/api.php?action=query&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=${encodeURIComponent(topTitle)}&format=json&origin=*`;
       const eRes = await fetch(extractUrl);
       const eData = await eRes.json();
@@ -309,7 +470,6 @@ export async function fetchLiveWikipediaKnowledge(query) {
       if (eData.query && eData.query.pages) {
         const page = Object.values(eData.query.pages)[0];
         if (page && page.extract) {
-          // Clean phonetic guides, brackets, dates in parentheses
           let cleanExtract = page.extract
             .replace(/\s*\([^)]*\)/g, "")
             .replace(/\[\d+\]/g, "")
@@ -318,7 +478,7 @@ export async function fetchLiveWikipediaKnowledge(query) {
 
           const sentences = cleanExtract.split(/(?<=[.!?])\s+/);
           const topSentences = sentences.slice(0, 2).join(' ').trim();
-          if (topSentences.length > 20) {
+          if (topSentences.length > 25) {
             return topSentences;
           }
         }
@@ -330,42 +490,51 @@ export async function fetchLiveWikipediaKnowledge(query) {
   return null;
 }
 
-/**
- * Generates an articulate, friendly spoken synthesis for general conversation
- */
-export function synthesizeConceptResponse(query) {
+export function synthesizeConversationalResponse(query) {
   const norm = query.toLowerCase();
 
   if (norm.includes("cómo funciona") || norm.includes("como funciona")) {
-    return `Para responder a cómo funciona "${query}": los sistemas complejos suelen operar coordinando componentes individuales que intercambian señales o energía para cumplir un objetivo conjunto.`;
+    return `Para explicarte "${query}": la mayoría de estos sistemas funcionan integrando reglas lógicas y componentes que colaboran para lograr un objetivo coordinado.`;
   }
 
   if (norm.includes("por qué") || norm.includes("porque")) {
-    return `Sobre "${query}": este fenómeno ocurre debido a la interacción de fuerzas físicas, biológicas o lógicas que rigen el comportamiento de la naturaleza y la tecnología.`;
+    return `Sobre tu pregunta de "${query}": esto ocurre debido a causas naturales o principios físicos y lógicos que determinan su comportamiento.`;
   }
 
   if (norm.includes("opinas") || norm.includes("te parece") || norm.includes("qué piensas")) {
-    return `Me parece un tema fascinante. Como inteligencia artificial conectada a la web con WebMCP, mi objetivo es ayudarte a analizarlo con objetividad y brindarte herramientas prácticas.`;
+    return `Me parece un tema muy interesante para reflexionar. Siempre es enriquecedor ver los diferentes puntos de vista al respecto. ¿Tú qué postura tienes?`;
   }
 
-  return `Entendido. Sobre tu consulta: "${query}", puedes hacerme cualquier pregunta de ciencia, historia, cálculo o pedirme que interactúe con los controles de la página web.`;
+  return `Te escucho con atención sobre "${query}". Puedes preguntarme lo que desees de ciencia, historia o charlar de cualquier tema que te apetezca.`;
+}
+
+function getRandomItem(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
 // ============================================================================
-// LLM Provider Integrations (Gemini, Ollama, OpenAI)
+// 7. Multi-Turn LLM Provider API Callers (Gemini, Groq, OpenAI, Ollama)
 // ============================================================================
-export async function queryGeminiAPI(apiKey, prompt) {
+export async function queryGeminiAPI(apiKey, history) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+  // Map history to Gemini format
+  const contents = history.map(msg => ({
+    role: msg.role === "assistant" ? "model" : "user",
+    parts: [{ text: msg.content }]
+  }));
+
   const response = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      contents,
       systemInstruction: {
-        parts: [{ text: "Eres un asistente de voz inteligente conectado a la web con WebMCP. Responde en español de forma directa, conversacional y en máximo 2 oraciones para ser leídas por voz." }]
+        parts: [{ text: SYSTEM_PROMPT }]
       }
     })
   });
+
   const data = await response.json();
   if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts[0].text) {
     return data.candidates[0].content.parts[0].text.trim();
@@ -373,23 +542,14 @@ export async function queryGeminiAPI(apiKey, prompt) {
   return null;
 }
 
-export async function queryOllamaAPI(endpoint, prompt) {
-  const cleanEndpoint = (endpoint || "http://localhost:11434").replace(/\/$/, "");
-  const response = await fetch(`${cleanEndpoint}/api/generate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "llama3",
-      prompt: `Responde en español de forma concisa en máximo 2 oraciones para ser leídas por voz: ${prompt}`,
-      stream: false
-    })
-  });
-  const data = await response.json();
-  return data.response ? data.response.trim() : null;
-}
-
-export async function queryOpenAIAPI(apiKey, endpoint, prompt) {
+export async function queryOpenAIAPI(apiKey, endpoint, history) {
   const cleanEndpoint = (endpoint || "https://api.openai.com/v1").replace(/\/$/, "");
+  
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.map(msg => ({ role: msg.role, content: msg.content }))
+  ];
+
   const response = await fetch(`${cleanEndpoint}/chat/completions`, {
     method: "POST",
     headers: {
@@ -398,15 +558,38 @@ export async function queryOpenAIAPI(apiKey, endpoint, prompt) {
     },
     body: JSON.stringify({
       model: "gpt-4o-mini",
-      messages: [
-        { role: "system", content: "Responde en español de forma directa y concisa en máximo 2 oraciones para voz." },
-        { role: "user", content: prompt }
-      ]
+      messages
     })
   });
+
   const data = await response.json();
   if (data.choices && data.choices[0].message) {
     return data.choices[0].message.content.trim();
+  }
+  return null;
+}
+
+export async function queryOllamaAPI(endpoint, history) {
+  const cleanEndpoint = (endpoint || "http://localhost:11434").replace(/\/$/, "");
+  
+  const messages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...history.map(msg => ({ role: msg.role, content: msg.content }))
+  ];
+
+  const response = await fetch(`${cleanEndpoint}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "llama3",
+      messages,
+      stream: false
+    })
+  });
+
+  const data = await response.json();
+  if (data.message && data.message.content) {
+    return data.message.content.trim();
   }
   return null;
 }

@@ -97,8 +97,8 @@ export async function processUserInstruction(rawText) {
   let toolArgs = {};
   let directSpeechResponse = null;
 
-  // 1. Check for Theme Change
-  if (lower.includes("tema") || lower.includes("color") || lower.includes("estilo") || lower.includes("modo")) {
+  // 1. Check for Theme Change (Explicit intent)
+  if (/\b(cambia(r)?|pon(er)?|modifica(r)?|aplica(r)?)\s+(el\s+)?(tema|color|estilo)\b/i.test(lower) || /\b(tema|modo)\s+(cyberpunk|esmeralda|sunset|midnight|oscuro|ne[oó]n|matrix)\b/i.test(lower)) {
     toolToCall = "cambiar_tema";
     if (lower.includes("cyber") || lower.includes("neón") || lower.includes("neon") || lower.includes("futurista")) {
       toolArgs = { tema: "cyberpunk" };
@@ -110,12 +110,12 @@ export async function processUserInstruction(rawText) {
       toolArgs = { tema: "midnight" };
     }
   }
-  // 2. Check for Task Management
-  else if (lower.includes("tarea") || lower.includes("nota") || lower.includes("pendiente") || lower.includes("recordatorio")) {
+  // 2. Check for Task Management (Explicit intent)
+  else if (/\b(agrega|crea|a[ñn]ade|pon|nueva)\s+(una\s+)?(tarea|nota|recordatorio)\b/i.test(lower) || /\b(completa|marcar|termina|tacha)\s+(la\s+)?tarea\b/i.test(lower) || /\b(limpia|borra|elimina)\s+(todas\s+las\s+)?tareas\b/i.test(lower)) {
     toolToCall = "gestionar_tareas";
-    if (lower.includes("complet") || lower.includes("marcar") || lower.includes("lista")) {
+    if (lower.includes("complet") || lower.includes("marcar") || lower.includes("termina")) {
       toolArgs = { accion: "completar" };
-    } else if (lower.includes("limpia") || lower.includes("borra todo") || lower.includes("elimina todo")) {
+    } else if (lower.includes("limpia") || lower.includes("borra") || lower.includes("elimina")) {
       toolArgs = { accion: "limpiar" };
     } else {
       let cleaned = text.replace(/^(agrega|crea|añade|nueva|pon)\s+(una\s+)?(tarea|nota)(\s*:)?\s*/i, "");
@@ -125,10 +125,10 @@ export async function processUserInstruction(rawText) {
       toolArgs = { accion: "agregar", texto: cleaned || "Nueva tarea desde comando de voz" };
     }
   }
-  // 3. Check for Timer
-  else if (lower.includes("temporizador") || lower.includes("alarma") || lower.includes("cuenta regresiva") || lower.includes("segundos") || lower.includes("minuto")) {
+  // 3. Check for Timer (Explicit intent)
+  else if (/\b(inicia|pon|activa|configura|cuenta\s+regresiva)\s+(un\s+)?temporizador\b/i.test(lower) || /\b(temporizador|alarma)\s+(de\s+)?\d+\s*(segundos|minuto)/i.test(lower) || /\b(det[eé]n|para|cancela|reinicia)\s+(el\s+)?temporizador\b/i.test(lower)) {
     toolToCall = "controlar_temporizador";
-    if (lower.includes("detén") || lower.includes("para") || lower.includes("stop") || lower.includes("pausa")) {
+    if (lower.includes("detén") || lower.includes("para") || lower.includes("stop") || lower.includes("pausa") || lower.includes("cancela")) {
       toolArgs = { accion: "detener" };
     } else if (lower.includes("reinicia") || lower.includes("reset")) {
       toolArgs = { accion: "reiniciar" };
@@ -143,8 +143,8 @@ export async function processUserInstruction(rawText) {
       toolArgs = { accion: "iniciar", segundos: sec };
     }
   }
-  // 4. Check for Chart Generation
-  else if (lower.includes("gráfico") || lower.includes("grafica") || lower.includes("grafico") || lower.includes("estadística") || lower.includes("ventas") || lower.includes("datos")) {
+  // 4. Check for Chart Generation (Explicit intent)
+  else if (/\b(genera|crea|muestra|haz|dibuja|actualiza)\s+(un\s+)?gr[aá]fico\b/i.test(lower) || /\b(gr[aá]fico\s+de\s+(barras|l[ií]neas|ventas|m[eé]tricas))\b/i.test(lower)) {
     toolToCall = "generar_grafico";
     const isLines = lower.includes("línea") || lower.includes("lineas");
     toolArgs = {
@@ -153,28 +153,22 @@ export async function processUserInstruction(rawText) {
     };
   }
   // 5. Check for Screen Reading
-  else if (lower.includes("lee la pantalla") || lower.includes("qué hay en pantalla") || lower.includes("que hay en pantalla") || lower.includes("resumen de pantalla")) {
+  else if (/\b(lee|resume|qu[eé] hay en)\s+(la\s+)?pantalla\b/i.test(lower)) {
     toolToCall = "leer_contenido_pantalla";
     toolArgs = { seccion: lower.includes("tarea") ? "tareas" : lower.includes("grafico") ? "grafico" : "general" };
   }
   // 6. Check for Tools Query
-  else if (lower.includes("herramienta") || lower.includes("qué puedes hacer") || lower.includes("que puedes hacer") || lower.includes("capacidades") || lower.includes("comandos")) {
+  else if (/\b(qu[eé] herramientas|lista de herramientas|qu[eé] puedes controlar|comandos disponibles)\b/i.test(lower)) {
     toolToCall = "consultar_herramientas";
     toolArgs = {};
   }
-  // 7. Conversational Flow Controls & Greetings
-  else if (lower.includes("pausa") || lower.includes("detén la conversación") || lower.includes("deten la conversacion") || lower.includes("para de escuchar") || lower.includes("silencio")) {
+  // 7. Conversational Flow Session Controls (Pause/Resume Listening)
+  else if (/\b(pausa la conversaci[oó]n|para de escuchar|silencio por favor|pausa el micr[oó]fono)\b/i.test(lower)) {
     pauseConversation(state, callbacks);
-    directSpeechResponse = "Conversación continua pausada. Presiona el botón o la barra espaciadora cuando desees volver a hablar.";
-  } else if (lower.includes("continúa") || lower.includes("continua") || lower.includes("reanuda") || lower.includes("sigue")) {
+    directSpeechResponse = "Conversación pausada. Haz clic en el botón o presiona la barra espaciadora cuando quieras que vuelva a escucharte.";
+  } else if (/\b(contin[uú]a escuchando|reanuda la conversaci[oó]n|sigue escuchando)\b/i.test(lower)) {
     startConversation(state, callbacks);
-    directSpeechResponse = "Conversación continua reanudada. Puedes seguir hablándome.";
-  } else if (lower.includes("hola") || lower.includes("buenos días") || lower.includes("buenas tardes")) {
-    directSpeechResponse = "¡Hola! Te escucho perfectamente y estamos en modo conversación continua. Dime qué deseas saber o qué herramienta quieres probar.";
-  } else if (lower.includes("cómo estás") || lower.includes("como estas")) {
-    directSpeechResponse = "¡Excelente! Listo para responder cualquier pregunta o interactuar con la página web mediante WebMCP. ¿Qué quieres saber?";
-  } else if (lower.includes("gracias") || lower.includes("muchas gracias")) {
-    directSpeechResponse = "¡Con mucho gusto! Sigo escuchándote por si tienes otra consulta.";
+    directSpeechResponse = "Conversación reanudada. Te escucho.";
   }
 
   // Execute WebMCP tool if matched

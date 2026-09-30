@@ -48,6 +48,7 @@
 | **2026-09-29** | Corrección de bug de habla ignorada (captura en `onend`) y bug de Chrome GC en síntesis vocal | `demo/js/voice-engine.js` |
 | **2026-09-29** | Incorporación de motor universal de respuestas: matemáticas, reloj en tiempo real, capitales del mundo, redirecciones de Wikipedia | `demo/js/ai-brain.js` |
 | **2026-09-29** | Generación de Favicon SVG/ICO para eliminar error 404 en consola | `demo/index.html`, `demo/favicon.ico` |
+| **2026-09-30** | Transformación en IA Conversacional (estilo ChatGPT/Gemini): memoria multi-turno, respuestas empáticas naturales y eliminación de respuestas enciclopédicas a saludos | `demo/js/ai-brain.js`, `demo/app.js` |
 
 ---
 
